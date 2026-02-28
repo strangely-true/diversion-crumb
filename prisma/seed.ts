@@ -118,7 +118,8 @@ async function main() {
       description: "Classic red velvet layers with cream cheese frosting.",
       status: ProductStatus.ACTIVE,
       tags: ["featured", "celebration"],
-      heroImage: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80",
+      heroImage:
+        "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80",
       categoryId: cakes.id,
       images: {
         create: [
@@ -158,7 +159,8 @@ async function main() {
       description: "Naturally fermented sourdough with crisp crust.",
       status: ProductStatus.ACTIVE,
       tags: ["daily-fresh"],
-      heroImage: "https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=1200&q=80",
+      heroImage:
+        "https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=1200&q=80",
       categoryId: bread.id,
       variants: {
         create: [
@@ -182,7 +184,8 @@ async function main() {
       description: "Flaky croissant with almond cream filling.",
       status: ProductStatus.ACTIVE,
       tags: ["best-seller"],
-      heroImage: "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=1200&q=80",
+      heroImage:
+        "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=1200&q=80",
       categoryId: pastries.id,
       variants: {
         create: [
@@ -213,7 +216,11 @@ async function main() {
   ];
 
   for (const variant of allVariants) {
-    const quantity = variant.sku.includes("2KG") ? 8 : variant.sku.includes("4PC") ? 18 : 30;
+    const quantity = variant.sku.includes("2KG")
+      ? 8
+      : variant.sku.includes("4PC")
+        ? 18
+        : 30;
 
     const inventoryLevel = await prisma.inventoryLevel.create({
       data: {
