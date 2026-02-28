@@ -53,6 +53,40 @@ function parseToolArgs(raw: string | Record<string, unknown> | undefined): Recor
   try { return JSON.parse(raw); } catch { return {}; }
 }
 
+async function resolveVariantIdFromToolArgs(args: Record<string, unknown>) {
+  const variantId = String(args.variantId ?? "").trim();
+  if (variantId) {
+    return variantId;
+  }
+
+  const productIdLike = String(args.productId ?? args.id ?? "").trim();
+  if (productIdLike) {
+    try {
+      const product = await ProductService.getProductById(productIdLike, false);
+      const activeVariant = product.variants.find((variant) => variant.isActive);
+      if (activeVariant) {
+        return activeVariant.id;
+      }
+      return null;
+    } catch {
+      return productIdLike;
+    }
+  }
+
+  const slug = String(args.slug ?? args.productSlug ?? "").trim();
+  if (slug) {
+    try {
+      const product = await ProductService.getProductBySlugDirect(slug, false);
+      const activeVariant = product.variants.find((variant) => variant.isActive);
+      return activeVariant?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  return "";
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Optional secret verification
@@ -116,11 +150,11 @@ async function executeToolCall(
   switch (name) {
     // ── addToCart ───────────────────────────────────────────────────────────
     case "addToCart": {
-      const variantId = String(args.variantId ?? "").trim();
+      const variantId = await resolveVariantIdFromToolArgs(args);
       const quantity = Number(args.quantity ?? 1);
 
       if (!variantId) {
-        return { error: "variantId is required" };
+        return { error: "variantId is required (or provide productId/slug)." };
       }
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return { error: "Invalid quantity" };
@@ -149,11 +183,11 @@ async function executeToolCall(
 
     // ── updateCartItemQuantity ──────────────────────────────────────────────
     case "updateCartItemQuantity": {
-      const variantId = String(args.variantId ?? "").trim();
+      const variantId = await resolveVariantIdFromToolArgs(args);
       const quantity = Number(args.quantity ?? 0);
 
       if (!variantId) {
-        return { error: "variantId is required" };
+        return { error: "variantId is required (or provide productId/slug)." };
       }
       if (!Number.isInteger(quantity) || quantity < 0) {
         return { error: "Invalid quantity" };
