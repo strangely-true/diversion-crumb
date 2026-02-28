@@ -92,10 +92,10 @@ interface AgentContextValue {
     pendingProposal: CartProposal | null;
     conversationId: string | null;
     isSidebarOpen: boolean;
-    startCall: (userName?: string) => Promise<void>;
+    startCall: (userName?: string, options?: { force?: boolean }) => Promise<void>;
     endCall: () => void;
     toggleMute: () => void;
-    sendTextMessage: (text: string) => Promise<void>;
+    sendTextMessage: (text: string, options?: { textOnly?: boolean }) => Promise<void>;
     approveProposal: () => void;
     rejectProposal: () => void;
     selectedMicrophoneId: string;
@@ -210,6 +210,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         async () => { console.warn("[Crumb] handleClientToolRef called before init"); },
     );
     const shouldPersistEscalatedStateRef = useRef(false);
+    const autoMutedForTextResponseRef = useRef(false);
+    const mutedStateBeforeTextOnlyRef = useRef(false);
 
     const handleMessage = useCallback(
         (msg: VapiMessage) => {
@@ -239,6 +241,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                     };
                     setMessages((prev) => [...prev, newMsg]);
                     scheduleMessageSave({ role, content });
+
+                    if (role === "assistant" && autoMutedForTextResponseRef.current && vapiRef.current) {
+                        const shouldRemainMuted = mutedStateBeforeTextOnlyRef.current;
+                        vapiRef.current.setMuted(shouldRemainMuted);
+                        setIsMuted(shouldRemainMuted);
+                        autoMutedForTextResponseRef.current = false;
+                    }
                 }
                 return;
             }
@@ -516,6 +525,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         return { message: "Unknown Vapi error", payload: value };
     }, []);
 
+    const isIgnorableVapiError = useCallback((value: unknown) => {
+        if (!value || typeof value !== "object") return false;
+        const keys = Object.keys(value as Record<string, unknown>);
+        return keys.length === 0;
+    }, []);
+
     // ── Lazy Vapi initialisation (browser only) ────────────────────────────────
     const getVapi = useCallback(async (): Promise<Vapi> => {
         if (vapiRef.current) return vapiRef.current;
@@ -528,10 +543,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             console.log("%c[Crumb:vapi] ✅ call-start", "color:#4ade80;font-weight:bold");
             console.log("%c[Crumb:vapi] CLIENT_TOOL_NAMES registered:", "color:#4ade80", [...CLIENT_TOOL_NAMES]);
             setStatus("active");
-            setMessages([]);
+            if (!pendingUserMessageRef.current) {
+                setMessages([]);
+            }
             setLiveTranscript(null);
             setPendingProposal(null);
             setIsSidebarOpen(true);
+
+            if (autoMutedForTextResponseRef.current) {
+                instance.setMuted(true);
+                setIsMuted(true);
+            }
 
             if (pendingMicrophoneDeviceIdRef.current) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -580,6 +602,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         instance.on("error", (err) => {
             const details = getVapiErrorDetails(err);
+            if (isIgnorableVapiError(err)) {
+                console.warn("%c[Crumb:vapi] ⚠ ignored empty error event", "color:#f59e0b;font-weight:bold", details);
+                return;
+            }
+
             console.error("%c[Crumb:vapi] ❌ error event", "color:#f87171;font-weight:bold", details);
             if (isMeetingEndedEjection(err)) {
                 setStatus("idle");
@@ -595,11 +622,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         vapiRef.current = instance;
         return instance;
-    }, [isMeetingEndedEjection, getVapiErrorDetails, flushMessageSave]);
+    }, [isMeetingEndedEjection, getVapiErrorDetails, isIgnorableVapiError, flushMessageSave]);
 
     // ── Start call ────────────────────────────────────────────────────────────────
-    const startCall = useCallback(async (userName?: string) => {
-        if (status !== "idle" || isStartingRef.current) return;
+    const startCall = useCallback(async (userName?: string, options?: { force?: boolean }) => {
+        if ((!options?.force && status !== "idle") || isStartingRef.current) return;
         isStartingRef.current = true;
         setStatus("connecting");
 
@@ -666,22 +693,57 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }, [status, getVapi, isMeetingEndedEjection, user]);
 
     const sendTextMessage = useCallback(
-        async (text: string) => {
+        async (text: string, options?: { textOnly?: boolean }) => {
             const message = text.trim();
             if (!message) return;
 
+            const appendUserMessage = () => {
+                const newMsg: ChatMessage = {
+                    id: crypto.randomUUID(),
+                    role: "user",
+                    content: message,
+                    timestamp: Date.now(),
+                };
+                setMessages((prev) => [...prev, newMsg]);
+                scheduleMessageSave({ role: "user", content: message });
+            };
+
+            const enableTextOnlyResponse = () => {
+                if (!options?.textOnly) return;
+                mutedStateBeforeTextOnlyRef.current = isMuted;
+                autoMutedForTextResponseRef.current = true;
+                if (!vapiRef.current || isMuted) return;
+                vapiRef.current.setMuted(true);
+                setIsMuted(true);
+            };
+
             if (status === "idle") {
+                appendUserMessage();
                 pendingUserMessageRef.current = message;
+                enableTextOnlyResponse();
                 await startCall();
                 return;
             }
 
             if (status === "connecting") {
+                appendUserMessage();
                 pendingUserMessageRef.current = message;
                 return;
             }
 
+            if (status === "escalated") {
+                appendUserMessage();
+                pendingUserMessageRef.current = message;
+                shouldPersistEscalatedStateRef.current = false;
+                enableTextOnlyResponse();
+                await startCall(undefined, { force: true });
+                return;
+            }
+
             if (status !== "active" || !vapiRef.current) return;
+
+            appendUserMessage();
+            enableTextOnlyResponse();
 
             vapiRef.current.send({
                 type: "add-message",
@@ -692,7 +754,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 triggerResponseEnabled: true,
             });
         },
-        [status, startCall],
+        [isMuted, scheduleMessageSave, status, startCall],
     );
 
     const setMicrophoneDevice = useCallback(async (deviceId: string) => {
