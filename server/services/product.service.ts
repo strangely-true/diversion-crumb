@@ -1,3 +1,4 @@
+import { unstable_cache, revalidateTag } from "next/cache";
 import { InventoryReason, ProductStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/server/prisma/client";
 import { AppError } from "@/server/errors/app-error";
@@ -13,117 +14,144 @@ type CreateProductInput = ReturnType<typeof createProductSchema.parse>;
 type UpdateProductInput = ReturnType<typeof updateProductSchema.parse>;
 type AdjustInventoryInput = ReturnType<typeof adjustInventorySchema.parse>;
 
+// ─── Cache config ────────────────────────────────────────────────────────────
+const PRODUCTS_TAG = "products";
+const PRODUCTS_CACHE_TTL = 5 * 60; // 5 minutes
+
+// ─── Raw DB query functions (wrapped below) ──────────────────────────────────
+async function _dbListProducts(input: ListProductsInput, isAdmin: boolean) {
+  const where = {
+    ...(input.search
+      ? {
+          OR: [
+            { name: { contains: input.search, mode: "insensitive" as const } },
+            {
+              description: {
+                contains: input.search,
+                mode: "insensitive" as const,
+              },
+            },
+            { slug: { contains: input.search, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(input.categorySlug ? { category: { slug: input.categorySlug } } : {}),
+    ...(isAdmin && input.includeDrafts
+      ? input.status
+        ? { status: input.status }
+        : {}
+      : { status: ProductStatus.ACTIVE }),
+  };
+
+  const skip = (input.page - 1) * input.pageSize;
+
+  const [items, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      skip,
+      take: input.pageSize,
+      include: {
+        category: true,
+        images: { orderBy: { sortOrder: "asc" } },
+        variants: {
+          where: { isActive: true },
+          include: { inventory: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.product.count({ where }),
+  ]);
+
+  return {
+    items,
+    page: input.page,
+    pageSize: input.pageSize,
+    total,
+    totalPages: Math.ceil(total / input.pageSize),
+  };
+}
+
+async function _dbGetProductById(productId: string, isAdmin: boolean) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: {
+      category: true,
+      images: { orderBy: { sortOrder: "asc" } },
+      variants: {
+        where: isAdmin ? undefined : { isActive: true },
+        include: { inventory: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!product) {
+    throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+  }
+  if (!isAdmin && product.status !== ProductStatus.ACTIVE) {
+    throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+  }
+  return product;
+}
+
+async function _dbGetProductBySlug(slug: string, isAdmin: boolean) {
+  const product = await prisma.product.findUnique({
+    where: { slug },
+    include: {
+      category: true,
+      images: { orderBy: { sortOrder: "asc" } },
+      variants: {
+        where: isAdmin ? undefined : { isActive: true },
+        include: { inventory: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!product) {
+    throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+  }
+  if (!isAdmin && product.status !== ProductStatus.ACTIVE) {
+    throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+  }
+  return product;
+}
+
+// ─── Cached wrappers ─────────────────────────────────────────────────────────
+const cachedListProducts = unstable_cache(_dbListProducts, ["products:list"], {
+  tags: [PRODUCTS_TAG],
+  revalidate: PRODUCTS_CACHE_TTL,
+});
+
+const cachedGetProductById = unstable_cache(
+  _dbGetProductById,
+  ["products:by-id"],
+  { tags: [PRODUCTS_TAG], revalidate: PRODUCTS_CACHE_TTL },
+);
+
+const cachedGetProductBySlug = unstable_cache(
+  _dbGetProductBySlug,
+  ["products:by-slug"],
+  { tags: [PRODUCTS_TAG], revalidate: PRODUCTS_CACHE_TTL },
+);
+
 export class ProductService {
   static async listProducts(input: ListProductsInput, isAdmin = false) {
-    const where = {
-      ...(input.search
-        ? {
-            OR: [
-              {
-                name: { contains: input.search, mode: "insensitive" as const },
-              },
-              {
-                description: {
-                  contains: input.search,
-                  mode: "insensitive" as const,
-                },
-              },
-              {
-                slug: { contains: input.search, mode: "insensitive" as const },
-              },
-            ],
-          }
-        : {}),
-      ...(input.categorySlug ? { category: { slug: input.categorySlug } } : {}),
-      ...(isAdmin && input.includeDrafts
-        ? input.status
-          ? { status: input.status }
-          : {}
-        : { status: ProductStatus.ACTIVE }),
-    };
-
-    const skip = (input.page - 1) * input.pageSize;
-
-    const [items, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        skip,
-        take: input.pageSize,
-        include: {
-          category: true,
-          images: { orderBy: { sortOrder: "asc" } },
-          variants: {
-            where: { isActive: true },
-            include: { inventory: true },
-            orderBy: { createdAt: "asc" },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.product.count({ where }),
-    ]);
-
-    return {
-      items,
-      page: input.page,
-      pageSize: input.pageSize,
-      total,
-      totalPages: Math.ceil(total / input.pageSize),
-    };
+    return cachedListProducts(input, isAdmin);
   }
 
   static async getProductById(productId: string, isAdmin = false) {
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: {
-        category: true,
-        images: { orderBy: { sortOrder: "asc" } },
-        variants: {
-          where: isAdmin ? undefined : { isActive: true },
-          include: { inventory: true },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-    });
-
-    if (!product) {
-      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-    }
-
-    if (!isAdmin && product.status !== ProductStatus.ACTIVE) {
-      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-    }
-
-    return product;
+    return cachedGetProductById(productId, isAdmin);
   }
 
   static async getProductBySlug(slug: string, isAdmin = false) {
-    const product = await prisma.product.findUnique({
-      where: { slug },
-      include: {
-        category: true,
-        images: { orderBy: { sortOrder: "asc" } },
-        variants: {
-          where: isAdmin ? undefined : { isActive: true },
-          include: { inventory: true },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-    });
-
-    if (!product) {
-      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-    }
-
-    if (!isAdmin && product.status !== ProductStatus.ACTIVE) {
-      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-    }
-
-    return product;
+    return cachedGetProductBySlug(slug, isAdmin);
   }
 
   static async createProduct(input: CreateProductInput, adminUserId: string) {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const db = tx as typeof prisma;
 
       const product = await db.product.create({
@@ -199,12 +227,15 @@ export class ProductService {
         },
       });
     });
+
+    revalidateTag(PRODUCTS_TAG, "default");
+    return result;
   }
 
   static async updateProduct(productId: string, input: UpdateProductInput) {
     await this.getProductById(productId, true);
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const db = tx as typeof prisma;
 
       await db.product.update({
@@ -246,12 +277,17 @@ export class ProductService {
         },
       });
     });
+
+    revalidateTag(PRODUCTS_TAG, "default");
+    return result;
   }
 
   static async deleteProduct(productId: string) {
     await this.getProductById(productId, true);
 
     await prisma.product.delete({ where: { id: productId } });
+
+    revalidateTag(PRODUCTS_TAG, "default");
 
     return {
       success: true,
