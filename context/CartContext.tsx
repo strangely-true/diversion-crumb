@@ -124,6 +124,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }, [toastMessage]);
 
     const addToCart = useCallback((product: CartProduct) => {
+        // Optimistic update for instant UI feedback
+        setCartItems((prev) => {
+            const existing = prev.find((item) => item.id === product.id);
+            if (existing) {
+                return prev.map((item) =>
+                    item.id === product.id
+                        ? { ...item, quantity: item.quantity + 1 }
+                        : item,
+                );
+            }
+            return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1 }];
+        });
+        setToastMessage(`${product.name} added to cart`);
+
+        // Reconcile with backend
         void addCartItem({
             variantId: product.id,
             quantity: 1,
@@ -135,21 +150,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                 setCartItems(mapBackendCartItems(cart));
             })
             .catch(() => {
-                setCartItems((prev) => {
-                    const existing = prev.find((item) => item.id === product.id);
-                    if (existing) {
-                        return prev.map((item) =>
-                            item.id === product.id
-                                ? { ...item, quantity: item.quantity + 1 }
-                                : item,
-                        );
-                    }
-
-                    return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1 }];
-                });
+                // Optimistic update already applied as fallback
             });
-        setToastMessage(`${product.name} added to cart`);
-    }, [cartItems]);
+    }, []);
 
     const increaseQuantity = useCallback((id: string) => {
         const target = cartItems.find((item) => item.id === id);
@@ -157,19 +160,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
+        // Optimistic update for instant UI feedback
+        setCartItems((prev) =>
+            prev.map((item) =>
+                item.id === id ? { ...item, quantity: item.quantity + 1 } : item,
+            ),
+        );
+
         void updateCartItem(id, target.quantity + 1, getOrCreateGuestSessionId())
             .then((cart) => {
                 setCartId(cart.id);
                 setCartItems(mapBackendCartItems(cart));
             })
-            .catch(() => {
-                setCartItems((prev) =>
-                    prev.map((item) =>
-                        item.id === id ? { ...item, quantity: item.quantity + 1 } : item,
-                    ),
-                );
-            });
-    }, []);
+            .catch(() => { });
+    }, [cartItems]);
 
     const decreaseQuantity = useCallback((id: string) => {
         const target = cartItems.find((item) => item.id === id);
@@ -178,42 +182,43 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (target.quantity <= 1) {
+            // Optimistic removal
+            setCartItems((prev) => prev.filter((item) => item.id !== id));
+
             void removeCartItem(id, getOrCreateGuestSessionId())
                 .then((cart) => {
                     setCartId(cart.id);
                     setCartItems(mapBackendCartItems(cart));
                 })
-                .catch(() => {
-                    setCartItems((prev) => prev.filter((item) => item.id !== id));
-                });
+                .catch(() => { });
             return;
         }
+
+        // Optimistic decrement
+        setCartItems((prev) =>
+            prev.map((item) =>
+                item.id === id ? { ...item, quantity: item.quantity - 1 } : item,
+            ),
+        );
 
         void updateCartItem(id, target.quantity - 1, getOrCreateGuestSessionId())
             .then((cart) => {
                 setCartId(cart.id);
                 setCartItems(mapBackendCartItems(cart));
             })
-            .catch(() => {
-                setCartItems((prev) =>
-                    prev
-                        .map((item) =>
-                            item.id === id ? { ...item, quantity: item.quantity - 1 } : item,
-                        )
-                        .filter((item) => item.quantity > 0),
-                );
-            });
+            .catch(() => { });
     }, [cartItems]);
 
     const removeItem = useCallback((id: string) => {
+        // Optimistic removal
+        setCartItems((prev) => prev.filter((item) => item.id !== id));
+
         void removeCartItem(id, getOrCreateGuestSessionId())
             .then((cart) => {
                 setCartId(cart.id);
                 setCartItems(mapBackendCartItems(cart));
             })
-            .catch(() => {
-                setCartItems((prev) => prev.filter((item) => item.id !== id));
-            });
+            .catch(() => { });
     }, []);
 
     const clearCart = useCallback(() => {

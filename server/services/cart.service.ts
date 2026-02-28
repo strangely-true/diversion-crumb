@@ -28,9 +28,15 @@ type CartSummary = {
 };
 
 function summarizeCart(cart: {
-  items: Array<{ quantity: number; unitPrice: number | string | bigint | { toString(): string } }>;
+  items: Array<{
+    quantity: number;
+    unitPrice: number | string | bigint | { toString(): string };
+  }>;
 }) {
-  const subtotal = cart.items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
+  const subtotal = cart.items.reduce(
+    (sum, item) => sum + Number(item.unitPrice) * item.quantity,
+    0,
+  );
   return {
     subtotal,
     itemCount: cart.items.reduce((sum, item) => sum + item.quantity, 0),
@@ -42,7 +48,9 @@ export class CartService {
     return Number(value.toFixed(2));
   }
 
-  private static async getCartSummaryByCartId(cartId: string): Promise<CartSummary> {
+  private static async getCartSummaryByCartId(
+    cartId: string,
+  ): Promise<CartSummary> {
     const cart = await prisma.cart.findUnique({
       where: { id: cartId },
       include: {
@@ -79,7 +87,9 @@ export class CartService {
       };
     });
 
-    const subtotal = this.roundMoney(items.reduce((sum, item) => sum + item.lineTotal, 0));
+    const subtotal = this.roundMoney(
+      items.reduce((sum, item) => sum + item.lineTotal, 0),
+    );
     const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
     return {
@@ -106,7 +116,6 @@ export class CartService {
             variant: {
               include: {
                 product: true,
-                inventory: true,
               },
             },
           },
@@ -117,7 +126,11 @@ export class CartService {
 
     if (!cart) {
       if (!userId && !sessionId) {
-        throw new AppError("sessionId is required for guest carts.", 400, "SESSION_REQUIRED");
+        throw new AppError(
+          "sessionId is required for guest carts.",
+          400,
+          "SESSION_REQUIRED",
+        );
       }
 
       cart = await prisma.cart.create({
@@ -133,13 +146,74 @@ export class CartService {
               variant: {
                 include: {
                   product: true,
-                  inventory: true,
                 },
               },
             },
           },
         },
       });
+    }
+
+    return {
+      ...cart,
+      summary: summarizeCart(cart),
+    };
+  }
+
+  private static async findOrCreateCartId(
+    userId: string | undefined,
+    sessionId: string | undefined,
+    currency: string,
+  ): Promise<{ id: string; currency: string }> {
+    const where = userId
+      ? { userId, status: CartStatus.ACTIVE }
+      : { sessionId, status: CartStatus.ACTIVE };
+
+    const existing = await prisma.cart.findFirst({
+      where,
+      select: { id: true, currency: true },
+    });
+
+    if (existing) return existing;
+
+    if (!userId && !sessionId) {
+      throw new AppError(
+        "sessionId is required for guest carts.",
+        400,
+        "SESSION_REQUIRED",
+      );
+    }
+
+    return prisma.cart.create({
+      data: {
+        userId,
+        sessionId: userId ? undefined : sessionId,
+        currency,
+        status: CartStatus.ACTIVE,
+      },
+      select: { id: true, currency: true },
+    });
+  }
+
+  private static async fetchCartForResponse(cartId: string) {
+    const cart = await prisma.cart.findUnique({
+      where: { id: cartId },
+      include: {
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" as const },
+        },
+      },
+    });
+
+    if (!cart) {
+      throw new AppError("Cart not found.", 404, "CART_NOT_FOUND");
     }
 
     return {
@@ -157,7 +231,10 @@ export class CartService {
   }
 
   static async getCart(userId: string): Promise<CartSummary>;
-  static async getCart(userId: string | undefined, input: GetCartInput): Promise<Awaited<ReturnType<typeof CartService.getOrCreateActiveCart>>>;
+  static async getCart(
+    userId: string | undefined,
+    input: GetCartInput,
+  ): Promise<Awaited<ReturnType<typeof CartService.getOrCreateActiveCart>>>;
   static async getCart(userId: string | undefined, input?: GetCartInput) {
     if (!input) {
       if (!userId) {
@@ -171,9 +248,20 @@ export class CartService {
     return this.getOrCreateActiveCart(userId, input.sessionId, input.currency);
   }
 
-  static async addItem(userId: string, variantId: string, quantity: number): Promise<CartSummary>;
-  static async addItem(userId: string | undefined, input: AddCartItemInput): Promise<Awaited<ReturnType<typeof CartService.getOrCreateActiveCart>>>;
-  static async addItem(userId: string | undefined, inputOrVariantId: AddCartItemInput | string, quantity?: number) {
+  static async addItem(
+    userId: string,
+    variantId: string,
+    quantity: number,
+  ): Promise<CartSummary>;
+  static async addItem(
+    userId: string | undefined,
+    input: AddCartItemInput,
+  ): Promise<Awaited<ReturnType<typeof CartService.getOrCreateActiveCart>>>;
+  static async addItem(
+    userId: string | undefined,
+    inputOrVariantId: AddCartItemInput | string,
+    quantity?: number,
+  ) {
     if (typeof inputOrVariantId === "string") {
       if (!userId) {
         throw new AppError("userId is required.", 400, "USER_ID_REQUIRED");
@@ -226,61 +314,74 @@ export class CartService {
     }
 
     const input = inputOrVariantId;
-    const cart = await this.getOrCreateActiveCart(userId, input.sessionId, input.currency);
 
-    const variant = await prisma.productVariant.findUnique({
-      where: { id: input.variantId },
-      include: {
-        product: true,
-        inventory: true,
-      },
-    });
+    // Parallel: get cart ID + validate variant (saves a round trip to Neon)
+    const [cartInfo, variant] = await Promise.all([
+      this.findOrCreateCartId(userId, input.sessionId, input.currency),
+      prisma.productVariant.findUnique({
+        where: { id: input.variantId },
+        include: {
+          product: true,
+          inventory: true,
+        },
+      }),
+    ]);
 
-    if (!variant || !variant.isActive || variant.product.status !== ProductStatus.ACTIVE) {
-      throw new AppError("Variant is not available for purchase.", 404, "VARIANT_NOT_AVAILABLE");
+    if (
+      !variant ||
+      !variant.isActive ||
+      variant.product.status !== ProductStatus.ACTIVE
+    ) {
+      throw new AppError(
+        "Variant is not available for purchase.",
+        404,
+        "VARIANT_NOT_AVAILABLE",
+      );
     }
 
     const availableQuantity = variant.inventory?.quantity ?? 0;
-
     if (availableQuantity < input.quantity) {
-      throw new AppError("Insufficient inventory.", 400, "INSUFFICIENT_INVENTORY");
+      throw new AppError(
+        "Insufficient inventory.",
+        400,
+        "INSUFFICIENT_INVENTORY",
+      );
     }
 
-    await prisma.$transaction(async (tx) => {
-      const db = tx as typeof prisma;
+    const cartId = cartInfo.id;
 
-      const existing = await db.cartItem.findFirst({
-        where: {
-          cartId: cart.id,
-          variantId: input.variantId,
-        },
-      });
-
-      if (existing) {
-        const nextQuantity = existing.quantity + input.quantity;
-        if (nextQuantity > availableQuantity) {
-          throw new AppError("Insufficient inventory.", 400, "INSUFFICIENT_INVENTORY");
-        }
-
-        await db.cartItem.update({
-          where: { id: existing.id },
-          data: {
-            quantity: nextQuantity,
-          },
-        });
-      } else {
-        await db.cartItem.create({
-          data: {
-            cartId: cart.id,
-            variantId: input.variantId,
-            quantity: input.quantity,
-            unitPrice: variant.price,
-          },
-        });
-      }
+    // Use compound unique key instead of findFirst (faster index lookup, no transaction overhead)
+    const existing = await prisma.cartItem.findUnique({
+      where: { cartId_variantId: { cartId, variantId: input.variantId } },
+      select: { id: true, quantity: true },
     });
 
-    return this.getOrCreateActiveCart(userId, input.sessionId, cart.currency);
+    if (existing) {
+      const nextQuantity = existing.quantity + input.quantity;
+      if (nextQuantity > availableQuantity) {
+        throw new AppError(
+          "Insufficient inventory.",
+          400,
+          "INSUFFICIENT_INVENTORY",
+        );
+      }
+      await prisma.cartItem.update({
+        where: { id: existing.id },
+        data: { quantity: nextQuantity },
+      });
+    } else {
+      await prisma.cartItem.create({
+        data: {
+          cartId,
+          variantId: input.variantId,
+          quantity: input.quantity,
+          unitPrice: variant.price,
+        },
+      });
+    }
+
+    // Lean response query using findUnique by PK (faster than findFirst)
+    return this.fetchCartForResponse(cartId);
   }
 
   static async updateQuantity(
@@ -311,7 +412,9 @@ export class CartService {
       return this.getCartSummaryByCartId(cart.id);
     }
 
-    const variant = await prisma.productVariant.findUnique({ where: { id: variantId } });
+    const variant = await prisma.productVariant.findUnique({
+      where: { id: variantId },
+    });
     if (!variant) {
       throw new AppError("Variant not found", 404, "VARIANT_NOT_FOUND");
     }
@@ -335,7 +438,11 @@ export class CartService {
     return this.getCartSummaryByCartId(cart.id);
   }
 
-  static async updateItemQuantity(userId: string | undefined, itemId: string, input: UpdateCartItemInput) {
+  static async updateItemQuantity(
+    userId: string | undefined,
+    itemId: string,
+    input: UpdateCartItemInput,
+  ) {
     const item = await prisma.cartItem.findUnique({
       where: { id: itemId },
       include: {
@@ -353,18 +460,30 @@ export class CartService {
     }
 
     if (userId && item.cart.userId && item.cart.userId !== userId) {
-      throw new AppError("Cannot modify another user's cart.", 403, "FORBIDDEN");
+      throw new AppError(
+        "Cannot modify another user's cart.",
+        403,
+        "FORBIDDEN",
+      );
     }
 
     if (!userId) {
       if (!input.sessionId || item.cart.sessionId !== input.sessionId) {
-        throw new AppError("Cannot modify another session cart.", 403, "FORBIDDEN");
+        throw new AppError(
+          "Cannot modify another session cart.",
+          403,
+          "FORBIDDEN",
+        );
       }
     }
 
     const availableQuantity = item.variant.inventory?.quantity ?? 0;
     if (input.quantity > availableQuantity) {
-      throw new AppError("Insufficient inventory.", 400, "INSUFFICIENT_INVENTORY");
+      throw new AppError(
+        "Insufficient inventory.",
+        400,
+        "INSUFFICIENT_INVENTORY",
+      );
     }
 
     await prisma.cartItem.update({
@@ -374,10 +493,14 @@ export class CartService {
       },
     });
 
-    return this.getOrCreateActiveCart(item.cart.userId ?? undefined, item.cart.sessionId ?? undefined, item.cart.currency);
+    return this.fetchCartForResponse(item.cart.id);
   }
 
-  static async removeItem(userId: string | undefined, itemId: string, input: RemoveCartItemInput) {
+  static async removeItem(
+    userId: string | undefined,
+    itemId: string,
+    input: RemoveCartItemInput,
+  ) {
     const item = await prisma.cartItem.findUnique({
       where: { id: itemId },
       include: { cart: true },
@@ -388,15 +511,23 @@ export class CartService {
     }
 
     if (userId && item.cart.userId && item.cart.userId !== userId) {
-      throw new AppError("Cannot modify another user's cart.", 403, "FORBIDDEN");
+      throw new AppError(
+        "Cannot modify another user's cart.",
+        403,
+        "FORBIDDEN",
+      );
     }
 
     if (!userId && input.sessionId && item.cart.sessionId !== input.sessionId) {
-      throw new AppError("Cannot modify another session cart.", 403, "FORBIDDEN");
+      throw new AppError(
+        "Cannot modify another session cart.",
+        403,
+        "FORBIDDEN",
+      );
     }
 
     await prisma.cartItem.delete({ where: { id: itemId } });
 
-    return this.getOrCreateActiveCart(item.cart.userId ?? undefined, item.cart.sessionId ?? undefined, item.cart.currency);
+    return this.fetchCartForResponse(item.cart.id);
   }
 }
