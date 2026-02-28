@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown, X } from "lucide-react";
 import { useAgent, type ChatMessage } from "@/context/AgentContext";
 import { Persona, type PersonaState } from "@/components/ai-elements/persona";
@@ -79,7 +79,7 @@ export default function AgentWidget() {
   const isActive = status === "active";
   const isEscalated = status === "escalated";
 
-  const [isClosed, setIsClosed] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const personaState = useMemo(
     () => getPersonaState(status, isSpeaking),
     [status, isSpeaking]
@@ -89,168 +89,216 @@ export default function AgentWidget() {
     [liveTranscript, messages, status, isSpeaking]
   );
 
+  const playOpenSound = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    try {
+      const ctx = new AudioContextCtor();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const now = ctx.currentTime;
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(620, now);
+      osc.frequency.exponentialRampToValueAtTime(860, now + 0.12);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.1, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.21);
+      osc.onended = () => {
+        void ctx.close();
+      };
+    } catch {
+      return;
+    }
+  }, []);
+
+  const handleOpen = useCallback(() => {
+    playOpenSound();
+    setIsExpanded(true);
+  }, [playOpenSound]);
+
   return (
     <TooltipProvider delayDuration={120}>
-      {isClosed ? (
-        <button
-          type="button"
-          onClick={() => setIsClosed(false)}
-          className={cn(
-            "fixed bottom-2 left-1/2 z-81 -translate-x-1/2",
-            "rounded-full border border-white/5 bg-zinc-900/90 px-3 py-1.5",
-            "text-[10px] text-white/50 hover:bg-white/5 hover:text-white/70 transition-colors",
-            "shadow-md backdrop-blur-sm"
-          )}
-          aria-label="Open Crumb"
-        >
-          Crumb
-        </button>
-      ) : (
+      <button
+        type="button"
+        onClick={handleOpen}
+        className={cn(
+          "fixed bottom-6 right-6 z-81",
+          "size-14 rounded-full border border-white/10 bg-zinc-900/95",
+          "text-white shadow-lg backdrop-blur-md",
+          "flex items-center justify-center",
+          "transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "hover:scale-105 active:scale-95",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30",
+          isExpanded
+            ? "pointer-events-none opacity-0 scale-95"
+            : "opacity-100 scale-100"
+        )}
+        aria-label="Open Crumb"
+      >
+        <span className="absolute inset-0 rounded-full border border-white/20 animate-ping opacity-50" />
+        <Mic className="relative size-6" />
+      </button>
+
+      <div
+        className={cn(
+          "fixed bottom-3 z-81 w-[calc(100vw-1rem)] max-w-[17rem] sm:w-[17rem]",
+          "rounded-xl border border-white/5 bg-zinc-900/95 shadow-lg backdrop-blur-sm",
+          "transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          isExpanded
+            ? "left-1/2 -translate-x-1/2 opacity-100 scale-100 translate-y-0"
+            : "right-6 left-auto translate-x-6 translate-y-2 opacity-0 scale-95 pointer-events-none"
+        )}
+      >
         <div
-          className={cn(
-            "fixed bottom-3 left-1/2 z-81 w-full max-w-2xs -translate-x-1/2",
-            "rounded-xl border border-white/5 bg-zinc-900/95 shadow-lg backdrop-blur-sm"
-          )}
+          className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5"
         >
-          <div className="flex items-center justify-between gap-1 px-2 pt-1.5 pb-0.5">
-            <p
-              className="flex-1 min-w-0 truncate text-center text-[11px] text-white/60"
-              title={convoLine}
-            >
-              {convoLine}
-            </p>
-            <Button
+          <p
+            className="flex-1 min-w-0 truncate text-center text-[11px] text-white/60"
+            title={convoLine}
+          >
+            {convoLine}
+          </p>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsExpanded(false)}
+            className={cn(
+              btnBase,
+              "size-6 shrink-0 text-white/40 hover:bg-white/5 hover:text-white/60"
+            )}
+            aria-label="Close"
+          >
+            <X className="size-3" />
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-center gap-1 px-2 pb-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={
+                  isConnecting || isEscalated
+                    ? undefined
+                    : isActive
+                      ? endCall
+                      : startCall
+                }
+                disabled={isConnecting || isEscalated}
+                className={cn(
+                  btnBase,
+                  "size-8 text-white/80 hover:bg-white/10 hover:text-white",
+                  isActive && "bg-white/10 text-white"
+                )}
+                aria-label={isActive ? "End call" : "Call"}
+              >
+                {isConnecting ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : isActive ? (
+                  <PhoneOff className="size-3.5" />
+                ) : (
+                  <Phone className="size-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-[11px]">
+              {isConnecting ? "Connecting…" : isActive ? "End call" : "Call"}
+            </TooltipContent>
+          </Tooltip>
+
+          <MicSelector
+            value={selectedMicrophoneId || undefined}
+            onValueChange={(id) => id && setMicrophoneDevice(id)}
+          >
+
+            <MicSelectorTrigger
               variant="ghost"
               size="icon"
-              onClick={() => setIsClosed(true)}
               className={cn(
                 btnBase,
-                "size-6 shrink-0 text-white/40 hover:bg-white/5 hover:text-white/60"
+                "size-8 text-white/50 hover:bg-white/5 hover:text-white/70"
               )}
-              aria-label="Close"
+              aria-label="Input device"
             >
-              <X className="size-3" />
-            </Button>
+
+            </MicSelectorTrigger>
+
+
+            <MicSelectorContent
+              className="p-1"
+              popoverOptions={{
+                side: "top",
+                align: "center",
+                className: "w-auto min-w-[11rem] p-0 rounded-md",
+                style: { width: "11rem", minWidth: "11rem" },
+              }}
+            >
+              <MicSelectorInput className="h-7 px-2 py-1 text-xs" />
+              <MicSelectorList className="max-h-48 p-0.5">
+                {(devices) =>
+                  devices.length === 0 ? (
+                    <MicSelectorEmpty className="py-2 text-[11px]" />
+                  ) : (
+                    devices.map((device) => (
+                      <MicSelectorItem
+                        key={device.deviceId}
+                        value={device.deviceId}
+                        className="rounded px-2 py-1.5 text-[11px]"
+                      >
+                        <MicSelectorLabel device={device} />
+                      </MicSelectorItem>
+                    ))
+                  )
+                }
+              </MicSelectorList>
+            </MicSelectorContent>
+          </MicSelector>
+
+          <div className="flex shrink-0 items-center justify-center" aria-hidden>
+            <Persona className="size-16" state={personaState} variant="halo" />
           </div>
 
-          <div className="flex items-center justify-center gap-1 px-2 pb-2">
+          {isActive && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={
-                    isConnecting || isEscalated
-                      ? undefined
-                      : isActive
-                        ? endCall
-                        : startCall
-                  }
-                  disabled={isConnecting || isEscalated}
+                  onClick={toggleMute}
                   className={cn(
                     btnBase,
-                    "size-8 text-white/80 hover:bg-white/10 hover:text-white",
-                    isActive && "bg-white/10 text-white"
+                    "size-8",
+                    isMuted
+                      ? "text-white/70 hover:bg-white/5 hover:text-white"
+                      : "text-white/50 hover:bg-white/5 hover:text-white/70"
                   )}
-                  aria-label={isActive ? "End call" : "Call"}
+                  aria-label={isMuted ? "Unmute" : "Mute"}
                 >
-                  {isConnecting ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : isActive ? (
-                    <PhoneOff className="size-3.5" />
+                  {isMuted ? (
+                    <MicOff className="size-3.5" />
                   ) : (
-                    <Phone className="size-3.5" />
+                    <Mic className="size-3.5" />
                   )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-[11px]">
-                {isConnecting ? "Connecting…" : isActive ? "End call" : "Call"}
+                {isMuted ? "Unmute" : "Mute"}
               </TooltipContent>
             </Tooltip>
-
-            <MicSelector
-              value={selectedMicrophoneId || undefined}
-              onValueChange={(id) => id && setMicrophoneDevice(id)}
-            >
-              
-                  <MicSelectorTrigger 
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    btnBase,
-                    "size-8 text-white/50 hover:bg-white/5 hover:text-white/70"
-                  )}
-                  aria-label="Input device"
-                  >
-                   
-                  </MicSelectorTrigger>
-              
-                
-              <MicSelectorContent
-                className="p-1"
-                popoverOptions={{
-                  side: "top",
-                  align: "center",
-                  className: "w-auto min-w-[11rem] p-0 rounded-md",
-                  style: { width: "11rem", minWidth: "11rem" },
-                }}
-              >
-                <MicSelectorInput className="h-7 px-2 py-1 text-xs" />
-                <MicSelectorList className="max-h-48 p-0.5">
-                  {(devices) =>
-                    devices.length === 0 ? (
-                      <MicSelectorEmpty className="py-2 text-[11px]" />
-                    ) : (
-                      devices.map((device) => (
-                        <MicSelectorItem
-                          key={device.deviceId}
-                          value={device.deviceId}
-                          className="rounded px-2 py-1.5 text-[11px]"
-                        >
-                          <MicSelectorLabel device={device} />
-                        </MicSelectorItem>
-                      ))
-                    )
-                  }
-                </MicSelectorList>
-              </MicSelectorContent>
-            </MicSelector>
-
-            <div className="flex shrink-0 items-center justify-center" aria-hidden>
-              <Persona className="size-24" state={personaState} variant="halo" />
-            </div>
-
-            {isActive && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={toggleMute}
-                    className={cn(
-                      btnBase,
-                      "size-8",
-                      isMuted
-                        ? "text-white/70 hover:bg-white/5 hover:text-white"
-                        : "text-white/50 hover:bg-white/5 hover:text-white/70"
-                    )}
-                    aria-label={isMuted ? "Unmute" : "Mute"}
-                  >
-                    {isMuted ? (
-                      <MicOff className="size-3.5" />
-                    ) : (
-                      <Mic className="size-3.5" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-[11px]">
-                  {isMuted ? "Unmute" : "Mute"}
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </TooltipProvider>
   );
 }
