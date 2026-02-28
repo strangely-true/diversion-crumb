@@ -7,7 +7,21 @@ type CreateQuickProductInput = {
   name: string;
   slug?: string;
   description?: string;
+  tags?: string[];
   heroImage?: string;
+  servingSize?: string;
+  ingredients?: string;
+  allergens?: string[];
+  nutritionPerServing?: {
+    calories?: number;
+    fatG?: number;
+    saturatedFatG?: number;
+    carbsG?: number;
+    sugarG?: number;
+    proteinG?: number;
+    fiberG?: number;
+    sodiumMg?: number;
+  };
   categoryId: string;
   price: number;
   stock?: number;
@@ -163,8 +177,12 @@ export class AdminService {
         slug: uniqueSlug,
         description: input.description,
         status: ProductStatus.ACTIVE,
-        tags: [],
+        tags: input.tags ?? [],
         heroImage: input.heroImage,
+        servingSize: input.servingSize,
+        ingredients: input.ingredients,
+        allergens: input.allergens ?? [],
+        nutritionPerServing: input.nutritionPerServing,
         categoryId: input.categoryId,
         images: input.heroImage
           ? [

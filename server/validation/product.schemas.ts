@@ -30,6 +30,17 @@ const productImageInputSchema = z.object({
   sortOrder: z.number().int().nonnegative().default(0),
 });
 
+const nutritionPerServingSchema = z.object({
+  calories: z.number().nonnegative().optional(),
+  fatG: z.number().nonnegative().optional(),
+  saturatedFatG: z.number().nonnegative().optional(),
+  carbsG: z.number().nonnegative().optional(),
+  sugarG: z.number().nonnegative().optional(),
+  proteinG: z.number().nonnegative().optional(),
+  fiberG: z.number().nonnegative().optional(),
+  sodiumMg: z.number().nonnegative().optional(),
+});
+
 export const createProductSchema = z.object({
   name: z.string().trim().min(2),
   slug: z.string().trim().min(2),
@@ -37,6 +48,10 @@ export const createProductSchema = z.object({
   status: z.enum(ProductStatus).default(ProductStatus.DRAFT),
   tags: z.array(z.string().trim().min(1)).default([]),
   heroImage: z.string().url().optional(),
+  servingSize: z.string().trim().optional(),
+  ingredients: z.string().trim().optional(),
+  allergens: z.array(z.string().trim().min(1)).default([]),
+  nutritionPerServing: nutritionPerServingSchema.optional(),
   categoryId: z.uuid().optional(),
   images: z.array(productImageInputSchema).default([]),
   variants: z.array(variantInputSchema).min(1),
@@ -49,6 +64,10 @@ export const updateProductSchema = z.object({
   status: z.enum(ProductStatus).optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
   heroImage: z.string().url().optional().nullable(),
+  servingSize: z.string().trim().optional().nullable(),
+  ingredients: z.string().trim().optional().nullable(),
+  allergens: z.array(z.string().trim().min(1)).optional(),
+  nutritionPerServing: nutritionPerServingSchema.optional().nullable(),
   categoryId: z.uuid().optional().nullable(),
   images: z.array(productImageInputSchema).optional(),
 });

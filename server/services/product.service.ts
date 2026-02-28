@@ -1,5 +1,6 @@
 import { unstable_cache, revalidateTag } from "next/cache";
 import { InventoryReason, ProductStatus } from "@/generated/prisma/enums";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { AppError } from "@/server/errors/app-error";
 import {
@@ -172,6 +173,10 @@ export class ProductService {
           status: input.status,
           tags: input.tags,
           heroImage: input.heroImage,
+          servingSize: input.servingSize,
+          ingredients: input.ingredients,
+          allergens: input.allergens,
+          nutritionPerServing: input.nutritionPerServing,
           categoryId: input.categoryId,
           variants: {
             create: input.variants.map((variant) => ({
@@ -268,6 +273,11 @@ export class ProductService {
           status: input.status,
           tags: input.tags,
           heroImage: input.heroImage === null ? null : input.heroImage,
+          servingSize: input.servingSize === null ? null : input.servingSize,
+          ingredients: input.ingredients === null ? null : input.ingredients,
+          allergens: input.allergens,
+          nutritionPerServing:
+            input.nutritionPerServing === null ? Prisma.JsonNull : input.nutritionPerServing,
           categoryId: input.categoryId === null ? null : input.categoryId,
         },
       });

@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/server/auth/auth";
 import { AdminService } from "@/server/services/admin.service";
+import AdminProductAIAssistant from "@/components/admin/AdminProductAIAssistant";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +42,36 @@ function normalizeHostedImageUrl(input: string) {
   return parsed.toString();
 }
 
+function parseCsv(value: string) {
+  return value
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function parseNutritionPerServing(value: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const keys = ["calories", "fatG", "saturatedFatG", "carbsG", "sugarG", "proteinG", "fiberG", "sodiumMg"];
+    const nutrition: Record<string, number> = {};
+
+    for (const key of keys) {
+      const next = parsed[key];
+      if (typeof next === "number" && Number.isFinite(next) && next >= 0) {
+        nutrition[key] = next;
+      }
+    }
+
+    return Object.keys(nutrition).length > 0 ? nutrition : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function addProductAction(formData: FormData) {
   "use server";
 
@@ -50,9 +81,25 @@ async function addProductAction(formData: FormData) {
   const description = String(formData.get("description") ?? "").trim();
   const categoryId = String(formData.get("categoryId") ?? "").trim();
   const heroImageUrl = String(formData.get("heroImageUrl") ?? "").trim();
+  const tagsCsv = String(formData.get("tagsCsv") ?? "").trim();
+  const servingSize = String(formData.get("servingSize") ?? "").trim();
+  const ingredients = String(formData.get("ingredients") ?? "").trim();
+  const allergensCsv = String(formData.get("allergensCsv") ?? "").trim();
+  const nutritionPerServingJson = String(formData.get("nutritionPerServingJson") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
+  const allergens = parseCsv(allergensCsv);
 
-  if (!name || !slug || !description || !categoryId || !heroImageUrl || !Number.isFinite(price) || price < 0) {
+  if (
+    !name ||
+    !slug ||
+    !description ||
+    !categoryId ||
+    !heroImageUrl ||
+    !ingredients ||
+    allergens.length === 0 ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
     return;
   }
 
@@ -68,6 +115,11 @@ async function addProductAction(formData: FormData) {
       description,
       categoryId,
       heroImage,
+      tags: parseCsv(tagsCsv),
+      servingSize: servingSize || undefined,
+      ingredients,
+      allergens,
+      nutritionPerServing: parseNutritionPerServing(nutritionPerServingJson),
       price,
       stock: 0,
     },
@@ -145,6 +197,7 @@ export default async function AdminProductsPage() {
           <CardDescription>Create a new product entry.</CardDescription>
         </CardHeader>
         <CardContent>
+          <AdminProductAIAssistant categories={categories} />
           <form action={addProductAction} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="name">Name *</Label>
@@ -182,6 +235,25 @@ export default async function AdminProductsPage() {
               <Input id="description" name="description" required />
             </div>
             <div className="space-y-2 md:col-span-2 lg:col-span-3">
+              <Label htmlFor="ingredients">Ingredients *</Label>
+              <Input
+                id="ingredients"
+                name="ingredients"
+                required
+                placeholder="Comma separated ingredients"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-1 lg:col-span-2">
+              <Label htmlFor="allergensCsv">Allergens *</Label>
+              <Input
+                id="allergensCsv"
+                name="allergensCsv"
+                required
+                placeholder="Example: gluten, dairy, eggs"
+              />
+              <p className="text-muted-foreground text-xs">Enter comma-separated allergens.</p>
+            </div>
+            <div className="space-y-2 md:col-span-2 lg:col-span-3">
               <Label htmlFor="heroImageUrl">Image URL (Unsplash) *</Label>
               <Input
                 id="heroImageUrl"
@@ -193,6 +265,9 @@ export default async function AdminProductsPage() {
               <p className="text-muted-foreground text-xs">Paste an Unsplash link.</p>
             </div>
             <div className="md:col-span-2 lg:col-span-3">
+              <input id="tagsCsv" name="tagsCsv" type="hidden" />
+              <input id="servingSize" name="servingSize" type="hidden" />
+              <input id="nutritionPerServingJson" name="nutritionPerServingJson" type="hidden" />
               <Button type="submit">Add Product</Button>
             </div>
           </form>
