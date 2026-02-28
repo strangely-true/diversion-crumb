@@ -105,15 +105,14 @@ export default function AgentWidget() {
                 {/* ── Status bar ──────────────────────────────────────────────────── */}
                 <div className="flex items-center gap-2 px-4 py-2 text-xs border-b border-[color:var(--border)] shrink-0 bg-[color:var(--surface-2)]">
                     <span
-                        className={`h-2 w-2 rounded-full shrink-0 ${
-                            isActive
+                        className={`h-2 w-2 rounded-full shrink-0 ${isActive
                                 ? "bg-green-500 animate-pulse"
                                 : isConnecting
                                     ? "bg-amber-400 animate-pulse"
                                     : isEscalated
                                         ? "bg-blue-400 animate-pulse"
                                         : "bg-[color:var(--text-muted)]"
-                        }`}
+                            }`}
                     />
                     <span className="text-[color:var(--text-muted)]">
                         {isConnecting
@@ -134,9 +133,8 @@ export default function AgentWidget() {
                         <div className="rounded-2xl bg-[color:var(--surface-2)] px-4 py-3 text-sm ring-1 ring-[color:var(--border)]">
                             <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[color:var(--text-muted)]">
                                 <span
-                                    className={`inline-block h-2 w-2 rounded-full ${
-                                        isSpeaking ? "animate-pulse bg-green-500" : "bg-amber-400"
-                                    }`}
+                                    className={`inline-block h-2 w-2 rounded-full ${isSpeaking ? "animate-pulse bg-green-500" : "bg-amber-400"
+                                        }`}
                                 />
                                 {isSpeaking ? "Rosie" : "You said"}
                             </div>
