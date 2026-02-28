@@ -44,6 +44,9 @@ interface AgentContextValue {
     startCall: () => Promise<void>;
     endCall: () => void;
     toggleMute: () => void;
+    sendTextMessage: (text: string) => Promise<void>;
+    selectedMicrophoneId: string;
+    setMicrophoneDevice: (deviceId: string) => Promise<void>;
     openSidebar: () => void;
     closeSidebar: () => void;
     toggleSidebar: () => void;
@@ -67,6 +70,21 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const [transcript, setTranscript] = useState("");
     const [conversationId, setConversationId] = useState<string | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
+    const pendingUserMessageRef = useRef<string | null>(null);
+    const pendingMicrophoneDeviceIdRef = useRef("");
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem("bakery_selected_mic_id") ?? "";
+            if (saved) {
+                setSelectedMicrophoneId(saved);
+                pendingMicrophoneDeviceIdRef.current = saved;
+            }
+        } catch {
+            // ignore storage access issues
+        }
+    }, []);
 
     const isMeetingEndedEjection = useCallback((value: unknown) => {
         if (!value || typeof value !== "object") return false;
@@ -98,6 +116,24 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         instance.on("call-start", () => {
             setStatus("active");
             setTranscript("");
+
+            if (pendingMicrophoneDeviceIdRef.current) {
+                void instance.setInputDevicesAsync({
+                    audioSource: pendingMicrophoneDeviceIdRef.current,
+                });
+            }
+
+            if (pendingUserMessageRef.current) {
+                instance.send({
+                    type: "add-message",
+                    message: {
+                        role: "user" as const,
+                        content: pendingUserMessageRef.current,
+                    },
+                    triggerResponseEnabled: true,
+                });
+                pendingUserMessageRef.current = null;
+            }
         });
 
         instance.on("call-end", () => {
@@ -294,6 +330,59 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         }
     }, [status, getVapi, isMeetingEndedEjection]);
 
+    const sendTextMessage = useCallback(
+        async (text: string) => {
+            const message = text.trim();
+            if (!message) return;
+
+            if (status === "idle") {
+                pendingUserMessageRef.current = message;
+                await startCall();
+                return;
+            }
+
+            if (status === "connecting") {
+                pendingUserMessageRef.current = message;
+                return;
+            }
+
+            if (status !== "active" || !vapiRef.current) return;
+
+            vapiRef.current.send({
+                type: "add-message",
+                message: {
+                    role: "user" as const,
+                    content: message,
+                },
+                triggerResponseEnabled: true,
+            });
+        },
+        [status, startCall],
+    );
+
+    const setMicrophoneDevice = useCallback(async (deviceId: string) => {
+        const nextDeviceId = deviceId.trim();
+
+        setSelectedMicrophoneId(nextDeviceId);
+        pendingMicrophoneDeviceIdRef.current = nextDeviceId;
+
+        try {
+            localStorage.setItem("bakery_selected_mic_id", nextDeviceId);
+        } catch {
+            // ignore storage access issues
+        }
+
+        if (!vapiRef.current || status !== "active" || !nextDeviceId) return;
+
+        try {
+            await vapiRef.current.setInputDevicesAsync({
+                audioSource: nextDeviceId,
+            });
+        } catch (err) {
+            console.error("[setMicrophoneDevice] error:", err);
+        }
+    }, [status]);
+
     // ── End call ──────────────────────────────────────────────────────────────────
     const endCall = useCallback(() => {
         vapiRef.current?.stop();
@@ -333,6 +422,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 startCall,
                 endCall,
                 toggleMute,
+                sendTextMessage,
+                selectedMicrophoneId,
+                setMicrophoneDevice,
                 openSidebar,
                 closeSidebar,
                 toggleSidebar,

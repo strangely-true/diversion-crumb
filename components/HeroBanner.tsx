@@ -27,10 +27,10 @@ export default function HeroBanner() {
 
                 <div>
                     <h1 className="text-4xl font-bold leading-[1.15] tracking-tight text-[color:var(--text-primary)] lg:text-5xl xl:text-6xl">
-                        Artisan Bakes for
+                        Artisanal Bakes for
                         <br />
                         <span className="relative inline-block">
-                            <span className="relative z-10">Every Sweet Moment</span>
+                            <span className="relative z-10">Every Sweet Moment!</span>
                             <span className="absolute bottom-1.5 left-0 h-3 w-full rounded-full bg-[color:var(--accent)] opacity-35" />
                         </span>
                     </h1>
@@ -91,7 +91,7 @@ export default function HeroBanner() {
                         <div className="flex items-center gap-2.5 rounded-xl bg-white/80 px-4 py-2.5 backdrop-blur-md shadow-lg dark:bg-black/60">
                             <Sparkles className="size-4 text-[color:var(--accent-strong)] shrink-0" />
                             <div>
-                                <p className="text-xs font-bold text-[color:var(--text-strong)]">Rosie is here to help</p>
+                                <p className="text-xs font-bold text-[color:var(--text-strong)]">Crumb is here to help</p>
                                 <p className="text-[11px] text-[color:var(--text-muted)]">Ask the AI assistant about our menu</p>
                             </div>
                         </div>

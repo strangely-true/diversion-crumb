@@ -65,12 +65,12 @@ const agentFeatures = [
   {
     icon: Search,
     title: "Browse the menu",
-    description: "Ask Rosie to list or search products by category, allergens, or price.",
+    description: "Ask Crumb to list or search products by category, allergens, or price.",
   },
   {
     icon: ShoppingCart,
     title: "Add to cart",
-    description: "\"Add 2 sourdough loaves to my cart\" — Rosie handles the rest.",
+    description: "\"Add 2 sourdough loaves to my cart\" — Crumb handles the rest.",
   },
   {
     icon: Package,
@@ -117,7 +117,7 @@ export default async function Home() {
                 Featured Products
               </h2>
               <p className="text-[color:var(--text-muted)] text-sm max-w-md">
-                Handpicked daily from our bakery floor — ask Rosie about any item.
+                Handpicked daily from our bakery floor — ask Crumb about any item.
               </p>
             </div>
             <Button
@@ -151,7 +151,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Rosie AI callout ──────────────────────────────────────────────────── */}
+      {/* ── Crumb AI callout ──────────────────────────────────────────────────── */}
       <section className="px-4 py-14 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="relative overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[linear-gradient(135deg,var(--surface-3)_0%,var(--surface-2)_60%,var(--bg)_100%)] px-8 py-12 shadow-[var(--shadow-soft)]">
@@ -171,11 +171,11 @@ export default async function Home() {
                   AI Voice Assistant
                 </Badge>
                 <h2 className="text-2xl font-bold text-[color:var(--text-primary)] lg:text-3xl">
-                  Meet Rosie — your bakery guide
+                  Meet Crumb — your bakery guide
                 </h2>
                 <p className="text-[color:var(--text-muted)] max-w-xl mx-auto lg:mx-0">
-                  Rosie is an AI voice assistant that browses the site with you in real-time.
-                  Click the <strong className="text-[color:var(--text-strong)]">Rosie</strong> tab on the right to start a conversation.
+                  Crumb is an AI voice assistant that browses the site with you in real-time.
+                  Click the <strong className="text-[color:var(--text-strong)]">Crumb</strong> tab on the right to start a conversation.
                 </p>
               </div>
 
