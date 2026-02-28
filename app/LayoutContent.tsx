@@ -17,7 +17,6 @@ export default function LayoutContent({
   const isAuthPage = pathname.startsWith("/auth/");
   const isAdminPage = pathname.startsWith("/admin");
   const { isCartOpen, closeCart } = useCart();
-  const { isSidebarOpen } = useAgent();
 
   if (isAuthPage) {
     return children;
@@ -29,10 +28,7 @@ export default function LayoutContent({
 
   return (
     <div className="bg-(--bg) min-h-screen overflow-x-clip">
-      <div
-        className={`transition-[margin] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isSidebarOpen ? "mr-[22rem]" : "mr-0"
-          }`}
-      >
+      <div>
         <Header />
         <main className="pt-20">{children}</main>
         <Footer />

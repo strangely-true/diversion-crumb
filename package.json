@@ -23,6 +23,8 @@
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.4.1",
     "@prisma/client": "^7.4.1",
+    "@radix-ui/react-use-controllable-state": "^1.2.2",
+    "@rive-app/react-webgl2": "^4.27.0",
     "@vapi-ai/web": "^2.5.2",
     "ai": "^6.0.104",
     "class-variance-authority": "^0.7.1",
