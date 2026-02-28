@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Mic, MicOff, PhoneOff, Loader2, Bot, X, Sparkles } from "lucide-react";
 import { useAgent } from "@/context/AgentContext";
+
+const suggestions = [
+    "Can you suggest a bestseller from today?",
+    "What are your egg-free options?",
+    "Help me build a birthday dessert order.",
+];
 
 /**
  * Voice-agent sidebar.
@@ -24,14 +30,78 @@ export default function AgentWidget() {
         startCall,
         endCall,
         toggleMute,
+        sendTextMessage,
+        selectedMicrophoneId,
+        setMicrophoneDevice,
         openSidebar,
         closeSidebar,
         toggleSidebar,
     } = useAgent();
+    const [input, setInput] = useState("");
+    const [microphones, setMicrophones] = useState<Array<{ deviceId: string; label: string }>>([]);
 
     const isConnecting = status === "connecting";
     const isActive = status === "active";
     const isEscalated = status === "escalated";
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!input.trim() || isEscalated) return;
+        const message = input;
+        setInput("");
+        await sendTextMessage(message);
+    };
+
+    const handleSuggestionClick = async (suggestion: string) => {
+        if (isEscalated) return;
+        await sendTextMessage(suggestion);
+    };
+
+    useEffect(() => {
+        let disposed = false;
+
+        const loadMicrophones = async () => {
+            if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return;
+
+            let devices = await navigator.mediaDevices.enumerateDevices();
+            let audioInputs = devices.filter((device) => device.kind === "audioinput");
+
+            if (audioInputs.length > 0 && audioInputs.every((device) => !device.label)) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach((track) => track.stop());
+                    devices = await navigator.mediaDevices.enumerateDevices();
+                    audioInputs = devices.filter((device) => device.kind === "audioinput");
+                } catch {
+                    // Permission may be blocked; keep fallback labels
+                }
+            }
+
+            if (disposed) return;
+
+            const next = audioInputs.map((device, index) => ({
+                deviceId: device.deviceId,
+                label: device.label || `Microphone ${index + 1}`,
+            }));
+            setMicrophones(next);
+
+            if (!selectedMicrophoneId && next[0]) {
+                void setMicrophoneDevice(next[0].deviceId);
+            }
+        };
+
+        const handleDeviceChange = () => {
+            void loadMicrophones();
+        };
+
+        void loadMicrophones();
+        navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
+
+        return () => {
+            disposed = true;
+            navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+        };
+    }, [selectedMicrophoneId, setMicrophoneDevice]);
 
     // Auto-open sidebar when a call becomes active
     useEffect(() => {
@@ -138,6 +208,32 @@ export default function AgentWidget() {
                     </span>
                 </div>
 
+                <div className="border-b border-[color:var(--border)] px-4 py-3 shrink-0">
+                    <label
+                        htmlFor="crumb-mic-selector"
+                        className="mb-1.5 block text-xs font-medium text-[color:var(--text-muted)]"
+                    >
+                        Microphone
+                    </label>
+                    <select
+                        id="crumb-mic-selector"
+                        value={selectedMicrophoneId}
+                        onChange={(e) => void setMicrophoneDevice(e.currentTarget.value)}
+                        disabled={isEscalated || microphones.length === 0}
+                        className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--surface-1)] px-3 text-sm text-[color:var(--text-primary)] outline-none focus:border-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {microphones.length === 0 ? (
+                            <option value="">No microphones found</option>
+                        ) : (
+                            microphones.map((device) => (
+                                <option key={device.deviceId} value={device.deviceId}>
+                                    {device.label}
+                                </option>
+                            ))
+                        )}
+                    </select>
+                </div>
+
                 {/* ── Conversation area ────────────────────────────────────────────── */}
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                     {isActive && transcript ? (
@@ -157,7 +253,7 @@ export default function AgentWidget() {
                                 <Sparkles size={26} />
                             </div>
                             <div>
-                                <p className="font-semibold text-[color:var(--text-strong)]">Hi, I'm Crumb!</p>
+                                <p className="font-semibold text-[color:var(--text-strong)]">Hi, I&apos;m Crumb!</p>
                                 <p className="mt-1 text-sm text-[color:var(--text-muted)] leading-relaxed">
                                     I can help you browse our menu, check ingredients, add items to your cart, and more.
                                 </p>
@@ -168,6 +264,39 @@ export default function AgentWidget() {
 
                 {/* ── Controls ─────────────────────────────────────────────────────── */}
                 <div className="px-4 py-4 border-t border-[color:var(--border)] shrink-0">
+                    <div className="mb-3 space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                            {suggestions.map((suggestion) => (
+                                <button
+                                    key={suggestion}
+                                    type="button"
+                                    onClick={() => void handleSuggestionClick(suggestion)}
+                                    disabled={isEscalated}
+                                    className="rounded-full border border-[color:var(--border)] bg-[color:var(--surface-1)] px-3 py-1.5 text-xs text-[color:var(--text-muted)] transition hover:bg-[color:var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {suggestion}
+                                </button>
+                            ))}
+                        </div>
+
+                        <form onSubmit={(e) => void handleSubmit(e)} className="flex items-end gap-2">
+                            <textarea
+                                value={input}
+                                onChange={(e) => setInput(e.currentTarget.value)}
+                                placeholder="Say something..."
+                                rows={2}
+                                className="min-h-[42px] flex-1 resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--surface-1)] px-3 py-2 text-sm text-[color:var(--text-primary)] outline-none ring-0 placeholder:text-[color:var(--text-muted)] focus:border-[color:var(--accent)]"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!input.trim() || isEscalated}
+                                className="h-10 shrink-0 rounded-full bg-[color:var(--accent)] px-4 text-xs font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                Send
+                            </button>
+                        </form>
+                    </div>
+
                     {isActive ? (
                         <div className="flex items-center gap-2">
                             {/* Mute toggle */}
