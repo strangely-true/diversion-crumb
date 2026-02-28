@@ -30,7 +30,7 @@ import { useAuth } from "@/context/AuthContext";
 interface ToolCall {
     id: string;
     type: string;
-    function: { name: string; arguments: string };
+    function: { name: string; arguments: string | Record<string, unknown> };
 }
 
 interface VapiMessage {
@@ -296,7 +296,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         async (vapi: Vapi, call: ToolCall) => {
             const { name } = call.function;
             let args: Record<string, unknown> = {};
-            try { args = JSON.parse(call.function.arguments); } catch { /* ignore */ }
+            const rawArgs = call.function.arguments;
+            if (typeof rawArgs === "object" && rawArgs !== null) {
+                args = rawArgs as Record<string, unknown>;
+            } else if (typeof rawArgs === "string") {
+                try { args = JSON.parse(rawArgs); } catch { /* ignore */ }
+            }
 
             console.log(
                 `%c[Crumb:exec] ▶ ${name}`,
