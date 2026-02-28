@@ -15,6 +15,32 @@ function formatDate(value: Date) {
   }).format(value);
 }
 
+function normalizeHostedImageUrl(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== "https:") {
+    return null;
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === "unsplash.com" || hostname === "www.unsplash.com") {
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts[0] === "photos" && parts[1]) {
+      const slugOrId = parts[1];
+      const id = slugOrId.includes("-") ? (slugOrId.split("-").pop() ?? "") : slugOrId;
+      if (id) {
+        return `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1200&q=80`;
+      }
+    }
+  }
+
+  return parsed.toString();
+}
+
 async function addProductAction(formData: FormData) {
   "use server";
 
@@ -22,22 +48,28 @@ async function addProductAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const slug = String(formData.get("slug") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const heroImage = String(formData.get("heroImage") ?? "").trim();
+  const categoryId = String(formData.get("categoryId") ?? "").trim();
+  const heroImageUrl = String(formData.get("heroImageUrl") ?? "").trim();
   const price = Number(formData.get("price") ?? 0);
-  const stock = Number(formData.get("stock") ?? 0);
 
-  if (!name || !Number.isFinite(price) || price < 0 || !Number.isFinite(stock) || stock < 0) {
+  if (!name || !slug || !description || !categoryId || !heroImageUrl || !Number.isFinite(price) || price < 0) {
+    return;
+  }
+
+  const heroImage = normalizeHostedImageUrl(heroImageUrl);
+  if (!heroImage) {
     return;
   }
 
   await AdminService.createQuickProduct(
     {
       name,
-      slug: slug || undefined,
-      description: description || undefined,
-      heroImage: heroImage || undefined,
+      slug,
+      description,
+      categoryId,
+      heroImage,
       price,
-      stock,
+      stock: 0,
     },
     session.userId,
   );
@@ -58,7 +90,46 @@ async function removeProductAction(formData: FormData) {
   revalidatePath("/admin/products");
 }
 
+async function removeProductImageAction(formData: FormData) {
+  "use server";
+
+  await requireAdmin();
+  const productId = String(formData.get("productId") ?? "").trim();
+  if (!productId) {
+    return;
+  }
+
+  await AdminService.clearProductImage(productId);
+  revalidatePath("/admin/products");
+}
+
+async function editProductImageAction(formData: FormData) {
+  "use server";
+
+  await requireAdmin();
+  const productId = String(formData.get("productId") ?? "").trim();
+  const heroImageUrl = String(formData.get("heroImageUrl") ?? "").trim();
+
+  if (!productId || !heroImageUrl) {
+    return;
+  }
+
+  try {
+    const normalized = normalizeHostedImageUrl(heroImageUrl);
+    if (!normalized) {
+      return;
+    }
+
+    await AdminService.setProductImage(productId, normalized);
+  } catch {
+    return;
+  }
+
+  revalidatePath("/admin/products");
+}
+
 export default async function AdminProductsPage() {
+  const categories = await AdminService.getProductCategories();
   const products = await AdminService.getProducts();
 
   return (
@@ -76,28 +147,50 @@ export default async function AdminProductsPage() {
         <CardContent>
           <form action={addProductAction} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="name">Name *</Label>
               <Input id="name" name="name" required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="slug">Slug (optional)</Label>
-              <Input id="slug" name="slug" />
+              <Label htmlFor="slug">Slug *</Label>
+              <Input id="slug" name="slug" required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="price">Price</Label>
+              <Label htmlFor="price">Price *</Label>
               <Input id="price" name="price" type="number" min="0" step="0.01" required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="stock">Stock</Label>
-              <Input id="stock" name="stock" type="number" min="0" step="1" required />
+              <Label htmlFor="categoryId">Category *</Label>
+              <select
+                id="categoryId"
+                name="categoryId"
+                required
+                defaultValue=""
+                className="border-input h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+              >
+                <option value="" disabled>
+                  Select a category
+                </option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="heroImage">Image URL (optional)</Label>
-              <Input id="heroImage" name="heroImage" type="url" />
+            <div className="space-y-2 md:col-span-1 lg:col-span-2">
+              <Label htmlFor="description">Description *</Label>
+              <Input id="description" name="description" required />
             </div>
             <div className="space-y-2 md:col-span-2 lg:col-span-3">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Input id="description" name="description" />
+              <Label htmlFor="heroImageUrl">Image URL (Unsplash) *</Label>
+              <Input
+                id="heroImageUrl"
+                name="heroImageUrl"
+                type="url"
+                required
+                placeholder="https://unsplash.com/photos/... or https://images.unsplash.com/..."
+              />
+              <p className="text-muted-foreground text-xs">Paste an Unsplash link.</p>
             </div>
             <div className="md:col-span-2 lg:col-span-3">
               <Button type="submit">Add Product</Button>
@@ -115,19 +208,35 @@ export default async function AdminProductsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Image</TableHead>
                 <TableHead>Name</TableHead>
+                <TableHead>Category</TableHead>
                 <TableHead>Slug</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Variants</TableHead>
                 <TableHead>Stock</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
+                  <TableCell>
+                    {product.heroImage ? (
+                      <img
+                        src={product.heroImage}
+                        alt={product.name}
+                        className="h-12 w-12 rounded-md border object-cover"
+                      />
+                    ) : (
+                      <div className="text-muted-foreground flex h-12 w-12 items-center justify-center rounded-md border text-xs">
+                        No image
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>{product.name}</TableCell>
+                  <TableCell>{product.category?.name ?? "-"}</TableCell>
                   <TableCell>{product.slug}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{product.status}</Badge>
@@ -138,12 +247,39 @@ export default async function AdminProductsPage() {
                   </TableCell>
                   <TableCell>{formatDate(product.createdAt)}</TableCell>
                   <TableCell>
-                    <form action={removeProductAction}>
-                      <input type="hidden" name="productId" value={product.id} />
-                      <Button type="submit" size="sm" variant="destructive">
-                        Remove
-                      </Button>
-                    </form>
+                    <div className="flex flex-col gap-2">
+                      <form action={editProductImageAction} className="flex items-center gap-2">
+                        <input type="hidden" name="productId" value={product.id} />
+                        <Input
+                          name="heroImageUrl"
+                          type="url"
+                          required
+                          defaultValue={product.heroImage ?? ""}
+                          placeholder="https://images.unsplash.com/..."
+                          className="h-8 w-64"
+                        />
+                        <Button type="submit" size="sm" variant="outline">
+                          Save Image
+                        </Button>
+                      </form>
+
+                      <div className="flex items-center gap-2">
+                        {product.heroImage ? (
+                          <form action={removeProductImageAction}>
+                            <input type="hidden" name="productId" value={product.id} />
+                            <Button type="submit" size="sm" variant="outline">
+                              Remove Image
+                            </Button>
+                          </form>
+                        ) : null}
+                        <form action={removeProductAction}>
+                          <input type="hidden" name="productId" value={product.id} />
+                          <Button type="submit" size="sm" variant="destructive">
+                            Remove
+                          </Button>
+                        </form>
+                      </div>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
