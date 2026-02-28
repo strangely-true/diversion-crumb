@@ -101,9 +101,35 @@ const AgentContext = createContext<AgentContextValue | undefined>(undefined);
 
 const GUEST_SESSION_KEY = "bakery_guest_session_id";
 
+function normalizeNavigationPath(rawPath: unknown): { path: string; blocked: boolean } {
+    const value = String(rawPath ?? "/").trim();
+    const lower = value.toLowerCase();
+
+    const aliasMap: Record<string, string> = {
+        "/home": "/",
+        "/homepage": "/",
+        "home": "/",
+        "/product": "/products",
+        "products": "/products",
+        "/my-orders": "/account",
+        "/orders": "/account",
+        "orders": "/account",
+        "/order-history": "/account",
+    };
+
+    const aliased = aliasMap[lower] ?? value;
+    const path = aliased.startsWith("/") ? aliased : `/${aliased}`;
+
+    if (path === "/admin" || path.startsWith("/admin/")) {
+        return { path: "/", blocked: true };
+    }
+
+    return { path, blocked: false };
+}
+
 export function AgentProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const { removeItem, reloadCart, openCart } = useCart();
+    const { removeItem, reloadCart } = useCart();
     const { user } = useAuth();
 
     const vapiRef = useRef<Vapi | null>(null);
@@ -314,16 +340,20 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             try {
                 switch (name) {
                     case "navigateTo": {
-                        const path = String(args.path ?? "/");
+                        const { path, blocked } = normalizeNavigationPath(args.path);
                         console.log(`%c[Crumb:exec] navigateTo → ${path}`, "color:#818cf8");
+                        if (blocked) {
+                            result = "Admin pages are restricted. I can navigate to public pages like home, products, account, cart, and checkout.";
+                            break;
+                        }
                         router.push(path);
                         result = `Navigated to ${path}`;
                         break;
                     }
                     case "openCartDrawer": {
-                        console.log("%c[Crumb:exec] openCartDrawer → calling openCart()", "color:#818cf8");
-                        openCart();
-                        result = "Cart drawer opened";
+                        console.log("%c[Crumb:exec] openCartDrawer → navigating to /cart", "color:#818cf8");
+                        router.push("/cart");
+                        result = "Navigated to /cart";
                         break;
                     }
                     case "removeFromCart": {
@@ -374,7 +404,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
             console.log(`%c[Crumb:exec] vapi.send(tool result) dispatched for ${name}`, "color:#4ade80");
         },
-        [router, openCart, removeItem, reloadCart],
+        [router, removeItem, reloadCart],
     );
 
     // Keep handleClientToolRef current
@@ -417,6 +447,39 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             const text = candidate.toLowerCase();
             return text.includes("meeting has ended") || text.includes("due to ejection");
         });
+    }, []);
+
+    const getVapiErrorDetails = useCallback((value: unknown) => {
+        if (value instanceof Error) {
+            return {
+                message: value.message || "Unknown Vapi error",
+                name: value.name,
+                stack: value.stack,
+            };
+        }
+
+        if (typeof value === "string") {
+            return { message: value };
+        }
+
+        if (value && typeof value === "object") {
+            const record = value as Record<string, unknown>;
+            const messageCandidate = [record.message, record.error, record.reason, record.type]
+                .find((entry) => typeof entry === "string") as string | undefined;
+
+            const keys = Object.keys(record);
+            return {
+                message:
+                    messageCandidate ??
+                    (keys.length === 0
+                        ? "Unknown Vapi error (empty object from SDK)"
+                        : "Vapi SDK error event"),
+                keys,
+                payload: record,
+            };
+        }
+
+        return { message: "Unknown Vapi error", payload: value };
     }, []);
 
     // ── Lazy Vapi initialisation (browser only) ────────────────────────────────
@@ -476,7 +539,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         });
 
         instance.on("error", (err) => {
-            console.error("%c[Crumb:vapi] ❌ error event:", "color:#f87171;font-weight:bold", err);
+            const details = getVapiErrorDetails(err);
+            console.error("%c[Crumb:vapi] ❌ error event", "color:#f87171;font-weight:bold", details);
             if (isMeetingEndedEjection(err)) {
                 setStatus("idle");
                 setIsSpeaking(false);
@@ -485,14 +549,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 isStartingRef.current = false;
                 return;
             }
-            console.error("[Vapi error]", err);
             setStatus("idle");
             isStartingRef.current = false;
         });
 
         vapiRef.current = instance;
         return instance;
-    }, [isMeetingEndedEjection, flushMessageSave]);
+    }, [isMeetingEndedEjection, getVapiErrorDetails, flushMessageSave]);
 
     // ── Start call ────────────────────────────────────────────────────────────────
     const startCall = useCallback(async (userName?: string) => {

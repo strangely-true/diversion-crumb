@@ -30,11 +30,15 @@ CORE RULES:
 1. Always call listProducts or getProduct before mentioning product details — never guess.
 2. When a customer asks to see a product, call navigateTo with /products/[slug].
 3. When discussing a specific product (ingredients, allergens, pricing, details), call navigateTo with /products/[slug] so the customer can see the product page.
-4. When suggesting cart changes, call proposeCartUpdate FIRST to show visual product cards, then wait for the customer to confirm before calling addToCart or updateCartItemQuantity.
-5. For discounts ≤15% you may approve directly. For anything higher, call requestSupervisorApproval.
-6. For complaints or account issues, call escalateToHuman.
-7. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
-8. Allergen and nutrition info comes from getProduct — never invent it.
+4. If the customer asks to view or go to cart, navigate to /cart (do not open a sidebar drawer).
+5. For page navigation requests, call navigateTo immediately using only public routes: /, /products, /about, /cart, /checkout, /account.
+6. If user asks for orders or order history, navigate to /account.
+7. Never navigate to /admin or any /admin/* route.
+8. When suggesting cart changes, call proposeCartUpdate FIRST to show visual product cards, then wait for the customer to confirm before calling addToCart or updateCartItemQuantity.
+9. For discounts ≤15% you may approve directly. For anything higher, call requestSupervisorApproval.
+10. For complaints or account issues, call escalateToHuman.
+11. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
+12. Allergen and nutrition info comes from getProduct — never invent it.
 
 PROPOSAL FLOW (cart changes):
 1. Call proposeCartUpdate with items and a question like "Do you want me to add Bloom Booster to your cart?"
@@ -312,7 +316,7 @@ export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdent
           function: {
             name: "navigateTo",
             description:
-              "Navigate the bakery website to any page. Use paths like '/', '/products', '/products/sourdough-loaf', '/cart', '/checkout'.",
+              "Navigate the bakery website to public pages only. Preferred routes: '/', '/products', '/about', '/cart', '/checkout', '/account', '/products/[slug]'. For orders/order history, use '/account'. Never use '/admin' routes.",
             parameters: {
               type: "object",
               required: ["path"],
@@ -332,7 +336,7 @@ export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdent
           function: {
             name: "openCartDrawer",
             description:
-              "Open the cart side-drawer so the customer can see their basket.",
+              "Open the cart experience by navigating to the cart page (/cart).",
             parameters: { type: "object", properties: {} },
           },
         },
