@@ -186,7 +186,7 @@ async function executeToolCall(
         categorySlug: args.category,
         search: args.search,
       });
-      const { items } = await ProductService.listProducts(query, false);
+      const { items } = await ProductService.listProductsDirect(query, false);
 
       return items.map((p) => ({
         id: p.id,
@@ -208,7 +208,7 @@ async function executeToolCall(
     // ── getProduct ───────────────────────────────────────────────────────────
     case "getProduct": {
       const slug = String(args.slug ?? "");
-      const p = await ProductService.getProductBySlug(slug);
+      const p = await ProductService.getProductBySlugDirect(slug);
 
       return {
         id: p.id,

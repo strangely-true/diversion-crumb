@@ -150,6 +150,16 @@ export class ProductService {
     return cachedGetProductBySlug(slug, isAdmin);
   }
 
+  /** Bypass unstable_cache — use for real-time contexts (e.g. VAPI tool calls). */
+  static async listProductsDirect(input: ListProductsInput, isAdmin = false) {
+    return _dbListProducts(input, isAdmin);
+  }
+
+  /** Bypass unstable_cache — use for real-time contexts (e.g. VAPI tool calls). */
+  static async getProductBySlugDirect(slug: string, isAdmin = false) {
+    return _dbGetProductBySlug(slug, isAdmin);
+  }
+
   static async createProduct(input: CreateProductInput, adminUserId: string) {
     const result = await prisma.$transaction(async (tx) => {
       const db = tx as typeof prisma;

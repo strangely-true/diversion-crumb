@@ -69,8 +69,9 @@ export function buildVapiAssistantConfig() {
               properties: {
                 category: {
                   type: "string",
+                  enum: ["cakes", "bread", "pastries", "cookies", "muffins"],
                   description:
-                    "Category slug, e.g. 'cakes', 'breads', 'pastries', 'cookies'",
+                    "Category slug. Must be one of: cakes, bread, pastries, cookies, muffins",
                 },
                 search: {
                   type: "string",
