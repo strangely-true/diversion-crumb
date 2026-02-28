@@ -1,46 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 import type { Product } from "@/lib/products";
 import { fetchProducts } from "@/lib/api/products";
 
 export function useProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let isActive = true;
-
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await fetchProducts();
-        if (isActive) {
-          setProducts(data);
-        }
-      } catch (err) {
-        if (isActive) {
-          setError(err instanceof Error ? err.message : "Failed to fetch products.");
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    load();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
+  const { data, isLoading, error } = useSWR<Product[]>(
+    "products",
+    fetchProducts,
+    {
+      // Don't re-fetch just because the user switched browser tabs
+      revalidateOnFocus: false,
+      // Deduplicate identical requests made within 60 s
+      dedupingInterval: 60 * 1000,
+      // Keep showing stale data while a background revalidation is running
+      keepPreviousData: true,
+    },
+  );
 
   return {
-    products,
+    products: data ?? [],
     isLoading,
-    error,
+    error: error
+      ? error instanceof Error
+        ? error.message
+        : "Failed to fetch products."
+      : null,
   };
 }

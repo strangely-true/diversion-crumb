@@ -13,6 +13,10 @@ import { mapDbProductToProduct } from "@/lib/products";
 import { ProductService } from "@/server/services/product.service";
 import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 
+// ISR — revalidate every 5 minutes; visiting the home page also warms the
+// Next.js data cache so every subsequent product-page hit is instant.
+export const revalidate = 300;
+
 // ── Static data ────────────────────────────────────────────────────────────────
 
 const categories = [

@@ -6,8 +6,54 @@ import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 import { mapDbProductToProduct, type Product } from "@/lib/products";
 import { AppError } from "@/server/errors/app-error";
 
+// ISR — revalidate every 5 minutes; mutations call revalidateTag("products")
+export const revalidate = 300;
+
 type PageProps = {
     params: Promise<{ slug: string }>;
+};
+
+// Pre-render every active product page at build time
+export async function generateStaticParams() {
+    const slugs: string[] = [];
+    let page = 1;
+    const pageSize = 50; // schema maximum
+
+    while (true) {
+        const { items, totalPages } = await ProductService.listProducts(
+            listProductsQuerySchema.parse({ page, pageSize }),
+            false,
+        );
+        slugs.push(...items.map((p) => p.slug));
+        if (page >= totalPages) break;
+        page++;
+    }
+
+    return slugs.map((slug) => ({ slug }));
+}
+
+const ALLERGEN_META: Record<string, { label: string; emoji: string; color: string }> = {
+    gluten: { label: "Gluten", emoji: "🌾", color: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300" },
+    dairy: { label: "Dairy", emoji: "🥛", color: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300" },
+    eggs: { label: "Eggs", emoji: "🥚", color: "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-300" },
+    nuts: { label: "Nuts", emoji: "🥜", color: "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/30 dark:text-orange-300" },
+    peanuts: { label: "Peanuts", emoji: "🥜", color: "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/30 dark:text-orange-300" },
+    soy: { label: "Soy", emoji: "🫘", color: "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300" },
+    fish: { label: "Fish", emoji: "🐟", color: "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-900/30 dark:text-cyan-300" },
+    shellfish: { label: "Shellfish", emoji: "🦐", color: "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300" },
+    sesame: { label: "Sesame", emoji: "🫙", color: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300" },
+    sulphites: { label: "Sulphites", emoji: "⚗️", color: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300" },
+};
+
+type NutritionFacts = {
+    calories?: number;
+    fat?: number;
+    carbs?: number;
+    protein?: number;
+    fiber?: number;
+    sodium?: number;
+    sugar?: number;
+    saturatedFat?: number;
 };
 
 export default async function ProductDetailPage({ params }: PageProps) {
@@ -120,6 +166,123 @@ export default async function ProductDetailPage({ params }: PageProps) {
                     </div>
                 </div>
             </section>
+
+            {/* ── Nutrition, Allergens & Ingredients ─────────────────────── */}
+            {(rawProduct.allergens.length > 0 || rawProduct.nutritionPerServing || rawProduct.servingSize || rawProduct.ingredients) && (
+                <section className="bg-[color:var(--bg)] px-6 py-14">
+                    <div className="mx-auto max-w-7xl space-y-10">
+
+                        {/* Section label */}
+                        <div>
+                            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--accent)]">
+                                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                                Nutritional Information
+                            </div>
+                            <h2 className="text-3xl font-bold text-[color:var(--text-primary)]">What&apos;s Inside</h2>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+                            {/* ── Allergens ────────────────────────────────── */}
+                            {rawProduct.allergens.length > 0 && (
+                                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-1)] p-6 shadow-[var(--shadow-soft)]">
+                                    <div className="mb-4 flex items-center gap-2">
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 dark:bg-red-900/30 text-base">⚠️</span>
+                                        <h3 className="font-bold text-[color:var(--text-primary)]">Allergen Warnings</h3>
+                                    </div>
+                                    <p className="mb-4 text-xs text-[color:var(--text-muted)]">
+                                        This product contains or may contain the following allergens:
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {rawProduct.allergens.map((allergen: string) => {
+                                            const key = allergen.toLowerCase();
+                                            const meta = ALLERGEN_META[key];
+                                            return (
+                                                <span
+                                                    key={allergen}
+                                                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${meta?.color ?? "bg-gray-100 text-gray-800 border-gray-300"
+                                                        }`}
+                                                >
+                                                    <span>{meta?.emoji ?? "•"}</span>
+                                                    {meta?.label ?? allergen}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                    {rawProduct.allergens.length === 0 && (
+                                        <p className="text-sm text-[color:var(--text-muted)]">No known allergens.</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── Nutrition Facts ──────────────────────────── */}
+                            {rawProduct.nutritionPerServing && (() => {
+                                const n = rawProduct.nutritionPerServing as NutritionFacts;
+                                const rows: Array<[string, string, boolean]> = [
+                                    ["Calories", n.calories != null ? `${n.calories} kcal` : "", true],
+                                    ["Total Fat", n.fat != null ? `${n.fat}g` : "", false],
+                                    ["Saturated Fat", n.saturatedFat != null ? `${n.saturatedFat}g` : "", false],
+                                    ["Total Carbs", n.carbs != null ? `${n.carbs}g` : "", false],
+                                    ["Sugar", n.sugar != null ? `${n.sugar}g` : "", false],
+                                    ["Dietary Fiber", n.fiber != null ? `${n.fiber}g` : "", false],
+                                    ["Protein", n.protein != null ? `${n.protein}g` : "", true],
+                                    ["Sodium", n.sodium != null ? `${n.sodium}mg` : "", false],
+                                ].filter(([, val]) => val !== "") as Array<[string, string, boolean]>;
+
+                                return (
+                                    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-1)] p-6 shadow-[var(--shadow-soft)]">
+                                        <div className="mb-4 flex items-center gap-2">
+                                            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-base">🥗</span>
+                                            <h3 className="font-bold text-[color:var(--text-primary)]">Nutrition Facts</h3>
+                                        </div>
+                                        {rawProduct.servingSize && (
+                                            <p className="mb-3 text-xs text-[color:var(--text-muted)]">
+                                                Per serving: <span className="font-semibold text-[color:var(--text-strong)]">{rawProduct.servingSize}</span>
+                                            </p>
+                                        )}
+                                        <div className="divide-y divide-[color:var(--border)] rounded-lg border border-[color:var(--border)] overflow-hidden">
+                                            {rows.map(([label, value, highlight]) => (
+                                                <div
+                                                    key={label}
+                                                    className={`flex items-center justify-between px-4 py-2.5 text-sm ${highlight
+                                                            ? "bg-[color:var(--surface-2)] font-semibold"
+                                                            : "bg-[color:var(--surface-1)]"
+                                                        }`}
+                                                >
+                                                    <span className="text-[color:var(--text-muted)]">{label}</span>
+                                                    <span className="font-bold text-[color:var(--text-primary)]">{value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* ── Ingredients ──────────────────────────────── */}
+                            {rawProduct.ingredients && (
+                                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-1)] p-6 shadow-[var(--shadow-soft)]">
+                                    <div className="mb-4 flex items-center gap-2">
+                                        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/30 text-base">🧾</span>
+                                        <h3 className="font-bold text-[color:var(--text-primary)]">Ingredients</h3>
+                                    </div>
+                                    <p className="text-sm leading-relaxed text-[color:var(--text-muted)]">
+                                        {rawProduct.ingredients}
+                                    </p>
+                                    <p className="mt-4 rounded-lg bg-[color:var(--surface-2)] px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                                        <span className="font-semibold text-[color:var(--text-strong)]">
+                                            Made in a facility
+                                        </span>{" "}
+                                        that also handles nuts, dairy, eggs, and gluten-containing products.
+                                    </p>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </section>
+            )}
 
             {related.length > 0 && (
                 <section className="relative bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--bg)_100%)] px-6 py-16">
