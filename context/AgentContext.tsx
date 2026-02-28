@@ -11,8 +11,10 @@ import {
 import { useRouter } from "next/navigation";
 import type Vapi from "@vapi-ai/web";
 import { buildVapiAssistantConfig, CLIENT_TOOL_NAMES } from "@/lib/vapi";
+import type { VapiIdentity } from "@/lib/vapi";
 import { removeCartItem } from "@/lib/api/cart";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 
 // ────────────────────────────────────────────────────────────────────────────
 // NOTE: This file was rewritten to:
@@ -97,9 +99,12 @@ const AgentContext = createContext<AgentContextValue | undefined>(undefined);
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+const GUEST_SESSION_KEY = "bakery_guest_session_id";
+
 export function AgentProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const { removeItem, reloadCart, openCart } = useCart();
+    const { user } = useAuth();
 
     const vapiRef = useRef<Vapi | null>(null);
     const isStartingRef = useRef(false);
@@ -250,8 +255,16 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 }
             }
 
+            // Detect server-side cart mutations and schedule a browser cart reload
+            const CART_TOOL_NAMES = new Set(["addToCart", "updateCartItemQuantity"]);
+            const allCalls = msg.toolCallList ?? (msg.functionCall ? [{ function: { name: msg.functionCall.name } }] : []);
+            const hasCartMutation = allCalls.some((c) => CART_TOOL_NAMES.has(c.function.name));
+            if (hasCartMutation) {
+                setTimeout(() => { reloadCart(); }, 2000);
+            }
+
             if (callList.length === 0 && msg.type !== "tool-calls" && msg.type !== "function-call") {
-                return; // nothing to execute
+                return;
             }
 
             if (callList.length === 0) {
@@ -270,7 +283,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 void handleClientToolRef.current(vapi, call);
             }
         },
-        [scheduleMessageSave],
+        [scheduleMessageSave, reloadCart],
     );
 
     // Keep the refs current — no stale closures in Vapi listeners
@@ -484,7 +497,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         try {
             const vapi = await getVapi();
-            const config = buildVapiAssistantConfig();
+
+            const identity: VapiIdentity = {};
+            if (user?.id) {
+                identity.userId = user.id;
+            }
+            try {
+                const guestSid = localStorage.getItem(GUEST_SESSION_KEY);
+                if (guestSid) identity.sessionId = guestSid;
+            } catch { /* ignore storage access issues */ }
+
+            const config = buildVapiAssistantConfig(identity);
 
             // Attach the assistantId if configured, otherwise use inline config
             const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
@@ -528,7 +551,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         } finally {
             isStartingRef.current = false;
         }
-    }, [status, getVapi, isMeetingEndedEjection]);
+    }, [status, getVapi, isMeetingEndedEjection, user]);
 
     const sendTextMessage = useCallback(
         async (text: string) => {

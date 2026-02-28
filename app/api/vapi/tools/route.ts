@@ -43,7 +43,6 @@ interface VapiToolCallsPayload {
     type: string;
     toolCallList?: ToolCall[];
   };
-  call?: { id?: string };
 }
 
 /** Safely extract args regardless of whether VAPI sent a string or object. */
@@ -63,8 +62,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body: VapiToolCallsPayload = await req.json();
-    const vapiCallId = body.call?.id;
+    // Identity comes from query params set by the client when the call starts
+    const userId = req.nextUrl.searchParams.get("userId") || undefined;
+    const sessionId = req.nextUrl.searchParams.get("sessionId") || undefined;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: VapiToolCallsPayload & Record<string, any> = await req.json();
 
     const toolCalls: ToolCall[] = body.message?.toolCallList ?? [];
 
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
         let result: unknown;
 
         try {
-          result = await executeToolCall(name, args, vapiCallId);
+          result = await executeToolCall(name, args, userId, sessionId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Tool call failed";
           result = { error: msg };
@@ -108,10 +111,11 @@ export async function POST(req: NextRequest) {
 async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
-  vapiCallId?: string,
+  userId?: string,
+  sessionId?: string,
 ): Promise<unknown> {
-  // Voice-session cart identity: use VAPI call ID as a guest session
-  const cartSessionId = vapiCallId ? `vapi_${vapiCallId}` : undefined;
+  // Use sessionId from the client for guest carts; userId for authenticated users
+  const cartSessionId = sessionId ?? "vapi_guest";
 
   switch (name) {
     // ── addToCart ───────────────────────────────────────────────────────────
@@ -125,12 +129,9 @@ async function executeToolCall(
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return { error: "Invalid quantity" };
       }
-      if (!cartSessionId) {
-        return { error: "No session — cannot identify cart" };
-      }
 
       try {
-        const cart = await CartService.addItem(undefined, {
+        const cart = await CartService.addItem(userId, {
           sessionId: cartSessionId,
           currency: "USD",
           variantId,
@@ -158,16 +159,13 @@ async function executeToolCall(
       if (!Number.isInteger(quantity) || quantity < 0) {
         return { error: "Invalid quantity" };
       }
-      if (!cartSessionId) {
-        return { error: "No session — cannot identify cart" };
-      }
 
       try {
-        const cart = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        const cart = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
         const existing = cart.items.find((i) => i.variantId === variantId);
 
         if (!existing && quantity > 0) {
-          const added = await CartService.addItem(undefined, {
+          const added = await CartService.addItem(userId, {
             sessionId: cartSessionId,
             currency: "USD",
             variantId,
@@ -181,13 +179,13 @@ async function executeToolCall(
         }
 
         if (existing) {
-          await CartService.updateItemQuantity(undefined, existing.id, {
+          await CartService.updateItemQuantity(userId, existing.id, {
             quantity,
             sessionId: cartSessionId,
           });
         }
 
-        const updated = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        const updated = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
         return {
           success: true,
           totalItems: updated.summary.itemCount,
@@ -201,12 +199,8 @@ async function executeToolCall(
 
     // ── getCart ──────────────────────────────────────────────────────────────
     case "getCart": {
-      if (!cartSessionId) {
-        return { error: "No session — cannot identify cart" };
-      }
-
       try {
-        const cart = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        const cart = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
         const items = cart.items.map((i) => ({
           name: i.variant.product.name,
           variant: i.variant.label,

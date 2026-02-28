@@ -6,7 +6,15 @@
  *  - Client tools  → no server URL         (Vapi fires SDK "message" event; browser handles them)
  */
 
-const SERVER_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
+const BASE_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
+
+function buildServerToolUrl(identity?: { userId?: string; sessionId?: string }): string {
+  const params = new URLSearchParams();
+  if (identity?.userId) params.set("userId", identity.userId);
+  if (identity?.sessionId) params.set("sessionId", identity.sessionId);
+  const qs = params.toString();
+  return qs ? `${BASE_TOOL_URL}?${qs}` : BASE_TOOL_URL;
+}
 
 export const BAKERY_SYSTEM_PROMPT = `You are Crumb, the warm and knowledgeable AI assistant for Crumbs & Co. bakery. Keep responses short and conversational — you are a voice assistant.
 
@@ -21,11 +29,12 @@ CAPABILITIES:
 CORE RULES:
 1. Always call listProducts or getProduct before mentioning product details — never guess.
 2. When a customer asks to see a product, call navigateTo with /products/[slug].
-3. When suggesting cart changes, call proposeCartUpdate FIRST to show visual product cards, then wait for the customer to confirm before calling addToCart or updateCartItemQuantity.
-4. For discounts ≤15% you may approve directly. For anything higher, call requestSupervisorApproval.
-5. For complaints or account issues, call escalateToHuman.
-6. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
-7. Allergen and nutrition info comes from getProduct — never invent it.
+3. When discussing a specific product (ingredients, allergens, pricing, details), call navigateTo with /products/[slug] so the customer can see the product page.
+4. When suggesting cart changes, call proposeCartUpdate FIRST to show visual product cards, then wait for the customer to confirm before calling addToCart or updateCartItemQuantity.
+5. For discounts ≤15% you may approve directly. For anything higher, call requestSupervisorApproval.
+6. For complaints or account issues, call escalateToHuman.
+7. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
+8. Allergen and nutrition info comes from getProduct — never invent it.
 
 PROPOSAL FLOW (cart changes):
 1. Call proposeCartUpdate with items and a question like "Do you want me to add Bloom Booster to your cart?"
@@ -44,7 +53,13 @@ IMPORTANT:
 
 // ─── Assistant Configuration ──────────────────────────────────────────────────
 
-export function buildVapiAssistantConfig() {
+export interface VapiIdentity {
+  userId?: string;
+  sessionId?: string;
+}
+
+export function buildVapiAssistantConfig(identity?: VapiIdentity) {
+  const serverUrl = buildServerToolUrl(identity);
   return {
     name: "Crumb – Crumbs & Co. Assistant",
 
@@ -84,7 +99,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -104,7 +119,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -124,7 +139,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -148,7 +163,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -172,7 +187,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -197,7 +212,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
@@ -211,7 +226,7 @@ export function buildVapiAssistantConfig() {
               properties: {},
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         // ────────────────────────────────────────────────────────────────────
@@ -284,7 +299,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: serverUrl },
         },
 
         {
