@@ -1,56 +1,51 @@
-import { NextRequest } from "next/server";
+import { auth0 } from "@/lib/auth0";
+import { prisma } from "@/server/prisma/client";
 import { UserRole } from "@/generated/prisma/enums";
 import { AppError } from "@/server/errors/app-error";
-import { verifyAuthToken } from "@/server/auth/jwt";
 
 export type AuthSession = {
   userId: string;
   role: UserRole;
-  email?: string;
+  email: string;
 };
 
-function getBearerToken(request: NextRequest) {
-  const authHeader = request.headers.get("authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) {
-    return null;
-  }
-
-  return authHeader.replace("Bearer ", "").trim();
+/**
+ * Upserts the Auth0 user into our database and returns the local session.
+ * The Auth0 `sub` is used as the User's primary key.
+ */
+async function syncUser(
+  sub: string,
+  email: string,
+  name?: string | null,
+): Promise<AuthSession> {
+  const user = await prisma.user.upsert({
+    where: { id: sub },
+    create: { id: sub, email, name: name ?? null },
+    update: { email },
+    select: { id: true, role: true, email: true },
+  });
+  return { userId: user.id, role: user.role, email: user.email };
 }
 
-export async function getOptionalSession(request: NextRequest): Promise<AuthSession | null> {
-  const bearerToken = getBearerToken(request);
-  const cookieToken = request.cookies.get("auth_token")?.value;
-  const token = bearerToken || cookieToken;
-
-  if (token) {
-    const payload = await verifyAuthToken(token);
-    return {
-      userId: payload.sub,
-      role: payload.role,
-      email: payload.email,
-    };
-  }
-
-  return null;
+// The _request parameter is kept so existing controllers compile without changes.
+export async function getOptionalSession(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _request?: unknown,
+): Promise<AuthSession | null> {
+  const session = await auth0.getSession();
+  if (!session?.user?.sub) return null;
+  return syncUser(session.user.sub, session.user.email ?? "", session.user.name);
 }
 
-export async function requireAuth(request: NextRequest): Promise<AuthSession> {
-  const session = await getOptionalSession(request);
-
-  if (!session) {
-    throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
-  }
-
+export async function requireAuth(_request?: unknown): Promise<AuthSession> {
+  const session = await getOptionalSession();
+  if (!session) throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
   return session;
 }
 
-export async function requireAdmin(request: NextRequest): Promise<AuthSession> {
-  const session = await requireAuth(request);
-
-  if (session.role !== UserRole.ADMIN) {
+export async function requireAdmin(_request?: unknown): Promise<AuthSession> {
+  const session = await requireAuth();
+  if (session.role !== UserRole.ADMIN)
     throw new AppError("Admin role required.", 403, "FORBIDDEN");
-  }
-
   return session;
 }

@@ -1,48 +1,35 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import {
-  fetchMe,
-  getStoredAuthUser,
-  login as loginApi,
-  logout as logoutApi,
-  signup as signupApi,
-  type AuthUser,
-} from "@/lib/api/auth";
+import type { AuthUser } from "@/lib/api/auth";
 
 type AuthContextType = {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  signup: (input: { email: string; password: string; confirmPassword: string; name?: string }) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  login: () => void;
+  signup: () => void;
+  logout: () => void;
   refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => getStoredAuthUser());
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   async function refreshSession() {
     setIsLoading(true);
     try {
-      const response = await fetchMe();
-      setUser((prev) => {
-        if (!response.user.email) {
-          return prev;
-        }
-
-        return {
-          id: response.user.id,
-          email: response.user.email,
-          name: prev?.name ?? null,
-          role: response.user.role,
-        };
-      });
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = (await res.json()) as { user: AuthUser };
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
     } catch {
       setUser(null);
     } finally {
@@ -54,19 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshSession();
   }, []);
 
-  async function login(email: string, password: string) {
-    const data = await loginApi(email, password);
-    setUser(data.user);
+  function login() {
+    window.location.href = "/auth/login";
   }
 
-  async function signup(input: { email: string; password: string; confirmPassword: string; name?: string }) {
-    const data = await signupApi(input);
-    setUser(data.user);
+  function signup() {
+    window.location.href = "/auth/login?screen_hint=signup";
   }
 
-  async function logout() {
-    await logoutApi();
-    setUser(null);
+  function logout() {
+    window.location.href = "/auth/logout";
   }
 
   const value = useMemo(
@@ -75,12 +59,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       isAuthenticated: Boolean(user),
       isAdmin: user?.role === "ADMIN",
-      signup,
       login,
+      signup,
       logout,
       refreshSession,
     }),
-    [user, isLoading, signup, login, logout, refreshSession],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user, isLoading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -73,9 +73,8 @@ enum InventoryReason {
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        String   @id // Auth0 subject (e.g. "auth0|abc123")
   email     String   @unique
-  password  String
   name      String?
   phone     String?  @db.VarChar(20)
   role      UserRole @default(CUSTOMER)

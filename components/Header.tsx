@@ -90,11 +90,7 @@ export default function Header() {
                     ) : (
                         <button
                             type="button"
-                            onClick={() => {
-                                void logout().then(() => {
-                                    window.location.href = "/auth/login";
-                                });
-                            }}
+                            onClick={logout}
                             className="hidden rounded-full border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-sm font-semibold text-[color:var(--text-strong)] transition hover:border-[color:var(--border-strong)] sm:inline-flex"
                         >
                             Logout
