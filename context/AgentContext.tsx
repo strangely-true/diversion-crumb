@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import type Vapi from "@vapi-ai/web";
 import { buildVapiAssistantConfig, CLIENT_TOOL_NAMES } from "@/lib/vapi";
-import { addCartItem, removeCartItem } from "@/lib/api/cart";
+import { removeCartItem } from "@/lib/api/cart";
 import { useCart } from "@/context/CartContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -57,15 +57,34 @@ const AgentContext = createContext<AgentContextValue | undefined>(undefined);
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const { addToCart, removeItem, reloadCart, openCart } = useCart();
+    const { removeItem, reloadCart, openCart } = useCart();
 
     const vapiRef = useRef<Vapi | null>(null);
+    const isStartingRef = useRef(false);
     const [status, setStatus] = useState<AgentStatus>("idle");
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [conversationId, setConversationId] = useState<string | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    const isMeetingEndedEjection = useCallback((value: unknown) => {
+        if (!value || typeof value !== "object") return false;
+
+        const record = value as Record<string, unknown>;
+        const candidates = [
+            record.message,
+            record.errorMsg,
+            record.reason,
+            record.type,
+        ];
+
+        return candidates.some((candidate) => {
+            if (typeof candidate !== "string") return false;
+            const text = candidate.toLowerCase();
+            return text.includes("meeting has ended") || text.includes("due to ejection");
+        });
+    }, []);
 
     // ── Lazy Vapi initialisation (browser only) ────────────────────────────────
     const getVapi = useCallback(async (): Promise<Vapi> => {
@@ -86,6 +105,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             setIsSpeaking(false);
             setIsMuted(false);
             setIsSidebarOpen(false);
+            isStartingRef.current = false;
         });
 
         instance.on("speech-start", () => setIsSpeaking(true));
@@ -116,8 +136,18 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         });
 
         instance.on("error", (err) => {
+            if (isMeetingEndedEjection(err)) {
+                setStatus("idle");
+                setIsSpeaking(false);
+                setIsMuted(false);
+                setIsSidebarOpen(false);
+                isStartingRef.current = false;
+                return;
+            }
+
             console.error("[Vapi error]", err);
             setStatus("idle");
+            isStartingRef.current = false;
         });
 
         vapiRef.current = instance;
@@ -168,31 +198,6 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                     }
 
                     // ──────────────────────────────────────────────────────────────────
-                    case "addToCart": {
-                        const variantId = String(args.variantId ?? "");
-                        const qty = typeof args.quantity === "number" ? args.quantity : 1;
-                        const productName = String(args.productName ?? "item");
-
-                        // Call cart API directly to get the updated cart
-                        const sessionId = (() => {
-                            try {
-                                return localStorage.getItem("bakery_guest_session_id") ?? undefined;
-                            } catch {
-                                return undefined;
-                            }
-                        })();
-
-                        await addCartItem({ variantId, quantity: qty, currency: "USD", sessionId });
-                        await reloadCart();
-
-                        // Also use CartContext addToCart for optimistic update + toast
-                        addToCart({ id: variantId, name: productName, price: 0 });
-
-                        result = `Added ${qty}x ${productName} to your cart`;
-                        break;
-                    }
-
-                    // ──────────────────────────────────────────────────────────────────
                     case "removeFromCart": {
                         const cartItemId = String(args.cartItemId ?? "");
                         const sessionId = (() => {
@@ -230,12 +235,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 triggerResponseEnabled: true,
             });
         },
-        [router, openCart, addToCart, removeItem, reloadCart],
+        [router, openCart, removeItem, reloadCart],
     );
 
     // ── Start call ────────────────────────────────────────────────────────────────
     const startCall = useCallback(async () => {
-        if (status !== "idle") return;
+        if (status !== "idle" || isStartingRef.current) return;
+        isStartingRef.current = true;
         setStatus("connecting");
 
         try {
@@ -279,10 +285,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 // non-critical
             }
         } catch (err) {
-            console.error("[startCall] error:", err);
+            if (!isMeetingEndedEjection(err)) {
+                console.error("[startCall] error:", err);
+            }
             setStatus("idle");
+        } finally {
+            isStartingRef.current = false;
         }
-    }, [status, getVapi]);
+    }, [status, getVapi, isMeetingEndedEjection]);
 
     // ── End call ──────────────────────────────────────────────────────────────────
     const endCall = useCallback(() => {

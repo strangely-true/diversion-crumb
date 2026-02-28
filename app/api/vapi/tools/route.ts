@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ProductService } from "@/server/services/product.service";
 import { KnowledgeService } from "@/server/services/knowledge.service";
 import { ConversationService } from "@/server/services/conversation.service";
+import { CartService } from "@/server/services/cart.service";
 import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 import { MessageRole, AgentType } from "@/generated/prisma/enums";
 
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
 
         return {
           toolCallId: call.id,
-          result: typeof result === "string" ? result : JSON.stringify(result),
+          result: JSON.stringify(result),
         };
       }),
     );
@@ -112,6 +113,71 @@ async function executeToolCall(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   switch (name) {
+    // ── addToCart ───────────────────────────────────────────────────────────
+    case "addToCart": {
+      const userId = String(args.userId ?? "").trim();
+      const variantId = String(args.variantId ?? "").trim();
+      const quantity = Number(args.quantity);
+
+      if (!userId || !variantId) {
+        return { error: "Missing required fields" };
+      }
+
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return { error: "Invalid quantity" };
+      }
+
+      try {
+        return await CartService.addItem(userId, variantId, quantity);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tool call failed";
+        if (message === "Variant not found") {
+          return { error: "Variant not found" };
+        }
+        return { error: message };
+      }
+    }
+
+    // ── updateCartItemQuantity ──────────────────────────────────────────────
+    case "updateCartItemQuantity": {
+      const userId = String(args.userId ?? "").trim();
+      const variantId = String(args.variantId ?? "").trim();
+      const quantity = Number(args.quantity);
+
+      if (!userId || !variantId) {
+        return { error: "Missing required fields" };
+      }
+
+      if (!Number.isInteger(quantity) || quantity < 0) {
+        return { error: "Invalid quantity" };
+      }
+
+      try {
+        return await CartService.updateQuantity(userId, variantId, quantity);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tool call failed";
+        if (message === "Variant not found") {
+          return { error: "Variant not found" };
+        }
+        return { error: message };
+      }
+    }
+
+    // ── getCart ──────────────────────────────────────────────────────────────
+    case "getCart": {
+      const userId = String(args.userId ?? "").trim();
+      if (!userId) {
+        return { error: "Missing required fields" };
+      }
+
+      try {
+        return await CartService.getCart(userId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tool call failed";
+        return { error: message };
+      }
+    }
+
     // ── listProducts ────────────────────────────────────────────────────────
     case "listProducts": {
       const query = listProductsQuerySchema.parse({

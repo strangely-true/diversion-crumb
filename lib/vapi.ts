@@ -26,7 +26,15 @@ Instructions:
 - Allergen and nutrition data is returned by getProduct — always read it from the tool result.
 - If you cannot confidently answer a question, call searchKnowledge first, then escalate if still unsure.
 - Keep voice responses under 2 sentences when possible. Offer to elaborate if needed.
-- Do not invent products, prices, or ingredients.`;
+- Do not invent products, prices, or ingredients.
+
+IMPORTANT:
+- You must NEVER say "Item added to cart" unless addToCart tool succeeds.
+- You must ALWAYS call addToCart before confirming cart updates.
+- You must NOT simulate cart updates.
+- All cart state must come from tool results.
+- If a cart tool fails, respond with the error from the tool.
+- Do not simulate cart updates conversationally.`;
 
 // ─── Assistant Configuration ──────────────────────────────────────────────────
 
@@ -136,6 +144,82 @@ export function buildVapiAssistantConfig() {
           server: { url: SERVER_TOOL_URL },
         },
 
+        {
+          type: "function" as const,
+          function: {
+            name: "addToCart",
+            description:
+              "Add a specific variant to a user's cart using deterministic backend arithmetic.",
+            parameters: {
+              type: "object",
+              required: ["userId", "variantId", "quantity"],
+              properties: {
+                userId: {
+                  type: "string",
+                  description: "Authenticated user ID",
+                },
+                variantId: {
+                  type: "string",
+                  description: "Product variant UUID",
+                },
+                quantity: {
+                  type: "number",
+                  description: "Quantity to add; must be greater than 0",
+                },
+              },
+            },
+          },
+          server: { url: SERVER_TOOL_URL },
+        },
+
+        {
+          type: "function" as const,
+          function: {
+            name: "updateCartItemQuantity",
+            description:
+              "Set cart quantity for a variant. quantity=0 removes the item.",
+            parameters: {
+              type: "object",
+              required: ["userId", "variantId", "quantity"],
+              properties: {
+                userId: {
+                  type: "string",
+                  description: "Authenticated user ID",
+                },
+                variantId: {
+                  type: "string",
+                  description: "Product variant UUID",
+                },
+                quantity: {
+                  type: "number",
+                  description:
+                    "Target quantity. If 0, item is removed. Must be an integer >= 0.",
+                },
+              },
+            },
+          },
+          server: { url: SERVER_TOOL_URL },
+        },
+
+        {
+          type: "function" as const,
+          function: {
+            name: "getCart",
+            description: "Get a user's full deterministic cart summary.",
+            parameters: {
+              type: "object",
+              required: ["userId"],
+              properties: {
+                userId: {
+                  type: "string",
+                  description: "Authenticated user ID",
+                },
+              },
+            },
+          },
+          server: { url: SERVER_TOOL_URL },
+        },
+
         // ────────────────────────────────────────────────────────────────────
         // CLIENT TOOLS  (no server URL → handled by the browser via Vapi SDK)
         // The browser receives message.type === "tool-calls" and responds with
@@ -168,34 +252,6 @@ export function buildVapiAssistantConfig() {
             description:
               "Open the cart side-drawer so the customer can see their basket.",
             parameters: { type: "object", properties: {} },
-          },
-        },
-
-        {
-          type: "function" as const,
-          function: {
-            name: "addToCart",
-            description:
-              "Add a specific product variant to the customer's cart. Always call getProduct first to get the correct variantId.",
-            parameters: {
-              type: "object",
-              required: ["variantId", "productName"],
-              properties: {
-                variantId: {
-                  type: "string",
-                  description: "Product variant UUID",
-                },
-                productName: {
-                  type: "string",
-                  description:
-                    "Human-readable product name for confirmation, e.g. 'Sourdough Loaf (Regular)'",
-                },
-                quantity: {
-                  type: "number",
-                  description: "Quantity to add (default 1)",
-                },
-              },
-            },
           },
         },
 
@@ -252,12 +308,10 @@ export function buildVapiAssistantConfig() {
 export type VapiClientToolName =
   | "navigateTo"
   | "openCartDrawer"
-  | "addToCart"
   | "removeFromCart";
 
 export const CLIENT_TOOL_NAMES = new Set<string>([
   "navigateTo",
   "openCartDrawer",
-  "addToCart",
   "removeFromCart",
 ] satisfies VapiClientToolName[]);
