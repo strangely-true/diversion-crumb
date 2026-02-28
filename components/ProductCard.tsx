@@ -2,45 +2,52 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import AddToCartButton from "@/components/AddToCartButton";
 import type { Product } from "@/lib/products";
 
 export default function ProductCard({ product }: { product: Product }) {
     return (
-        <article className="group relative rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-1)] shadow-[var(--shadow-soft)] transition-all duration-500 hover:-translate-y-2 hover:shadow-[var(--shadow-strong)]">
-            {/* Decorative corner accent */}
-            <div className="absolute right-0 top-0 h-20 w-20 overflow-hidden rounded-tr-2xl">
-                <div className="absolute right-0 top-0 h-0 w-0 border-b-[50px] border-r-[50px] border-b-transparent border-r-[color:var(--accent)] opacity-10 transition-opacity group-hover:opacity-20"></div>
-            </div>
-
-            <Link href={`/products/${product.slug}`}>
-                <div className="relative h-56 w-full overflow-hidden rounded-t-2xl bg-[color:var(--surface-2)]">
+        <Card className="group relative overflow-hidden rounded-2xl border-[color:var(--border)] bg-[color:var(--surface-1)] py-0 shadow-[var(--shadow-soft)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[var(--shadow-strong)] gap-0">
+            {/* ── Image ─────────────────────────────────────────────────────── */}
+            <Link href={`/products/${product.slug}`} className="block">
+                <div className="relative h-52 w-full overflow-hidden bg-[color:var(--surface-2)]">
                     <Image
                         src={product.image}
                         alt={product.name}
                         fill
-                        className="object-cover transition duration-700 group-hover:scale-110 group-hover:rotate-1"
+                        className="object-cover transition-transform duration-500 group-hover:scale-105"
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                     />
-                    {/* Overlay gradient on hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                    {/* scrim */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                    {/* Category badge floated on image */}
+                    <div className="absolute left-3 top-3">
+                        <Badge className="rounded-full bg-white/80 px-2.5 py-0.5 text-[10px] font-semibold text-[color:var(--accent-contrast)] backdrop-blur-sm shadow-sm border-0">
+                            {product.category}
+                        </Badge>
+                    </div>
                 </div>
             </Link>
 
-            <div className="relative space-y-3 p-5">
-                <div>
-                    <h3 className="text-lg font-semibold text-[color:var(--text-primary)] transition-colors group-hover:text-[color:var(--accent-strong)]">
+            {/* ── Body ──────────────────────────────────────────────────────── */}
+            <CardContent className="px-4 pt-4 pb-2 space-y-1">
+                <Link href={`/products/${product.slug}`}>
+                    <h3 className="font-semibold text-base leading-snug text-[color:var(--text-primary)] transition-colors group-hover:text-[color:var(--accent-strong)] line-clamp-2">
                         {product.name}
                     </h3>
-                    <p className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--text-muted)]">
-                        <span className="h-1 w-1 rounded-full bg-[color:var(--accent)]"></span>
-                        {product.category}
-                    </p>
-                </div>
-                <p className="text-2xl font-bold text-[color:var(--text-primary)]">
+                </Link>
+                <p className="text-2xl font-bold text-[color:var(--text-strong)] tracking-tight">
                     ${product.price.toFixed(2)}
+                    <span className="ml-1 text-xs font-normal text-[color:var(--text-muted)]">/ unit</span>
                 </p>
+            </CardContent>
+
+            {/* ── Footer CTA ────────────────────────────────────────────────── */}
+            <CardFooter className="px-4 pb-4 pt-0">
                 <AddToCartButton product={product} />
-            </div>
-        </article>
+            </CardFooter>
+        </Card>
     );
 }

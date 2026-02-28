@@ -2,68 +2,84 @@ import Link from "next/link";
 import Image from "next/image";
 import HeroBanner from "@/components/HeroBanner";
 import ProductCard from "@/components/ProductCard";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { ArrowRight, Star, Bot, Search, ShoppingCart, Package } from "lucide-react";
 import { mapDbProductToProduct } from "@/lib/products";
 import { ProductService } from "@/server/services/product.service";
 import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 
+// ── Static data ────────────────────────────────────────────────────────────────
+
 const categories = [
   {
+    slug: "Cakes",
     title: "Cakes",
-    description: "Celebration-ready artisan cakes.",
-    image:
-      "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=900&q=80",
+    description: "Celebration-ready artisan cakes for every occasion.",
+    image: "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=900&q=80",
   },
   {
-    title: "Bread",
-    description: "Slow-fermented loaves baked fresh daily.",
-    image:
-      "https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=900&q=80",
+    slug: "Breads",
+    title: "Breads",
+    description: "Slow-fermented sourdoughs and rustic loaves baked fresh daily.",
+    image: "https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=900&q=80",
   },
   {
+    slug: "Pastries",
     title: "Pastries",
-    description: "Flaky, buttery pastries for every mood.",
-    image:
-      "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=900&q=80&crop=entropy",
+    description: "Flaky, buttery pastries and croissants for every craving.",
+    image: "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=900&q=80",
   },
 ];
 
 const testimonials = [
   {
-    quote:
-      "Crumbs & Co. made our wedding unforgettable. The vanilla berry cake was perfect.",
+    quote: "Crumbs & Co. made our wedding unforgettable. The vanilla berry cake was absolutely perfect.",
     author: "Anika M.",
-    image:
-      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80",
+    role: "Wedding customer",
+    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80",
   },
   {
-    quote:
-      "The sourdough is consistently excellent. We order every week for brunch.",
+    quote: "The sourdough is consistently excellent. We order every week for Sunday brunch.",
     author: "Rahul P.",
-    image:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80",
+    role: "Regular customer",
+    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80",
   },
   {
-    quote: "Premium quality and elegant packaging. My go-to bakery for gifts.",
+    quote: "Premium quality and elegant packaging. My absolute go-to bakery for gifts.",
     author: "Nina S.",
-    image:
-      "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=300&q=80",
+    role: "Gift buyer",
+    image: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=300&q=80",
   },
 ];
 
-const sectionImages = {
-  "Featured Products":
-    "/images/featured-products-icon.svg",
-  "Shop by Category":
-    "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80",
-  "What Customers Say":
-    "https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=500&q=80",
-  "Join Our Bakery Newsletter":
-    "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=500&q=80",
-};
+const agentFeatures = [
+  {
+    icon: Search,
+    title: "Browse the menu",
+    description: "Ask Rosie to list or search products by category, allergens, or price.",
+  },
+  {
+    icon: ShoppingCart,
+    title: "Add to cart",
+    description: "\"Add 2 sourdough loaves to my cart\" — Rosie handles the rest.",
+  },
+  {
+    icon: Package,
+    title: "Track your order",
+    description: "Get real-time order status and reorder with a single sentence.",
+  },
+];
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default async function Home() {
   const { items } = await ProductService.listProducts(
-    listProductsQuerySchema.parse({ page: 1, pageSize: 4 }),
+    listProductsQuerySchema.parse({ page: 1, pageSize: 8 }),
     false,
   );
   const featuredProducts = items
@@ -71,214 +87,257 @@ export default async function Home() {
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
   return (
-    <div>
-      <section className="bg-[color:var(--bg)] px-6 py-12">
+    <div className="space-y-0">
+
+      {/* ── Hero ──────────────────────────────────────────────────────────────── */}
+      <section className="px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <HeroBanner />
         </div>
       </section>
 
-      <section className="bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--bg)_100%)] px-6 py-12">
+      {/* ── Featured Products ─────────────────────────────────────────────────── */}
+      <section className="bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--bg)_100%)] px-4 py-14 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl space-y-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-[color:var(--border)] shadow-sm">
-                <Image
-                  src={sectionImages["Featured Products"]}
-                  alt="Featured Products"
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <h2 className="text-3xl font-bold text-[color:var(--text-primary)]">Featured Products</h2>
+
+          {/* Section header */}
+          <div className="flex items-end justify-between gap-4">
+            <div className="space-y-1">
+              <Badge
+                variant="outline"
+                className="rounded-full border-[color:var(--border)] bg-[color:var(--surface-1)] text-[color:var(--text-muted)] text-[11px] tracking-widest uppercase"
+              >
+                Fresh today
+              </Badge>
+              <h2 className="text-3xl font-bold text-[color:var(--text-primary)] tracking-tight">
+                Featured Products
+              </h2>
+              <p className="text-[color:var(--text-muted)] text-sm max-w-md">
+                Handpicked daily from our bakery floor — ask Rosie about any item.
+              </p>
             </div>
-            <Link
-              href="/products"
-              className="rounded-full bg-[color:var(--accent)] px-5 py-2.5 font-semibold text-[color:var(--accent-contrast)] shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5"
+            <Button
+              asChild
+              variant="outline"
+              className="shrink-0 rounded-full border-[color:var(--border-strong)] text-[color:var(--text-strong)] hover:border-[color:var(--accent-strong)] hover:bg-[color:var(--surface-2)] hidden sm:flex"
             >
-              Shop All
-            </Link>
+              <Link href="/products">
+                Shop All <ArrowRight className="size-3.5" />
+              </Link>
+            </Button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+
+          {/* Product grid */}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {featuredProducts.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
+
+          {/* Mobile "shop all" */}
+          <div className="sm:hidden text-center">
+            <Button
+              asChild
+              variant="outline"
+              className="rounded-full border-[color:var(--border-strong)] text-[color:var(--text-strong)]"
+            >
+              <Link href="/products">View All Products <ArrowRight className="size-3.5" /></Link>
+            </Button>
+          </div>
         </div>
       </section>
 
-      <section className="bg-[color:var(--bg)] px-6 py-12">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-[color:var(--border)] shadow-sm">
-              <Image
-                src={sectionImages["Shop by Category"]}
-                alt="Shop by Category"
-                fill
-                className="object-cover"
-              />
-            </div>
-            <h2 className="text-3xl font-bold text-[color:var(--text-primary)]">Shop by Category</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {categories.map((category) => (
-              <div
-                key={category.title}
-                className="group relative overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface-1)] shadow-[var(--shadow-soft)] transition-all duration-500 hover:-translate-y-2 hover:shadow-[var(--shadow-strong)]"
-              >
-                <div className="relative h-52 w-full overflow-hidden">
-                  <Image
-                    src={category.image}
-                    alt={category.title}
-                    fill
-                    className="object-cover transition duration-700 group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent"></div>
-                  <div className="absolute bottom-4 left-6">
-                    <h3 className="text-3xl font-bold text-white drop-shadow-lg">
-                      {category.title}
-                    </h3>
-                  </div>
-                </div>
-                <div className="p-6">
-                  <p className="text-[color:var(--text-muted)] leading-relaxed">{category.description}</p>
-                  <Link
-                    href={`/products?category=${category.title}`}
-                    className="mt-5 inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--border-strong)] bg-[color:var(--surface-2)] px-5 py-2.5 font-semibold text-[color:var(--text-strong)] transition-all hover:border-[color:var(--accent)] hover:bg-[color:var(--accent)] hover:text-[color:var(--accent-contrast)]"
-                  >
-                    Explore {category.title}
-                    <svg
-                      className="h-4 w-4 transition-transform group-hover:translate-x-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </Link>
-                </div>
+      {/* ── Rosie AI callout ──────────────────────────────────────────────────── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="relative overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[linear-gradient(135deg,var(--surface-3)_0%,var(--surface-2)_60%,var(--bg)_100%)] px-8 py-12 shadow-[var(--shadow-soft)]">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[color:var(--accent)] opacity-10 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-8 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[color:var(--accent-strong)] opacity-10 blur-3xl" />
+
+            <div className="relative z-10 flex flex-col items-center gap-10 text-center lg:flex-row lg:text-left">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--accent)] shadow-[var(--shadow-soft)]">
+                <Bot className="size-10 text-[color:var(--accent-contrast)]" />
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      <section className="bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--bg)_100%)] px-6 py-12">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-[color:var(--border)] shadow-sm">
-              <Image
-                src={sectionImages["What Customers Say"]}
-                alt="What Customers Say"
-                fill
-                className="object-cover"
-              />
-            </div>
-            <h2 className="text-3xl font-bold text-[color:var(--text-primary)]">What Customers Say</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {testimonials.map((item) => (
-              <div
-                key={item.author}
-                className="group relative overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-1)] p-6 shadow-[var(--shadow-soft)] transition-all hover:shadow-[var(--shadow-strong)]"
-              >
-                {/* Quote decoration */}
-                <svg
-                  className="absolute -right-2 -top-2 h-24 w-24 text-[color:var(--accent)] opacity-10"
-                  fill="currentColor"
-                  viewBox="0 0 32 32"
+              <div className="flex-1 space-y-2">
+                <Badge
+                  variant="outline"
+                  className="rounded-full border-[color:var(--border)] bg-[color:var(--surface-1)] text-[color:var(--text-muted)] text-[11px] tracking-widest uppercase"
                 >
-                  <path d="M10 8.586L8.586 10 14.586 16 8.586 22 10 23.414 16 17.414z" />
-                  <path d="M10 8.586L8.586 10 14.586 16 8.586 22 10 23.414 16 17.414z" transform="translate(8)" />
-                </svg>
+                  AI Voice Assistant
+                </Badge>
+                <h2 className="text-2xl font-bold text-[color:var(--text-primary)] lg:text-3xl">
+                  Meet Rosie — your bakery guide
+                </h2>
+                <p className="text-[color:var(--text-muted)] max-w-xl mx-auto lg:mx-0">
+                  Rosie is an AI voice assistant that browses the site with you in real-time.
+                  Click the <strong className="text-[color:var(--text-strong)]">Rosie</strong> tab on the right to start a conversation.
+                </p>
+              </div>
 
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="relative h-12 w-12 overflow-hidden rounded-full border-2 border-[color:var(--accent)] shadow-md">
-                    <Image
-                      src={item.image}
-                      alt={item.author}
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-[color:var(--text-primary)]">{item.author}</p>
-                    <div className="mt-0.5 flex gap-0.5">
-                      {[...Array(5)].map((_, i) => (
-                        <svg key={i} className="h-4 w-4 fill-[color:var(--accent)]" viewBox="0 0 20 20">
-                          <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                        </svg>
-                      ))}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1 lg:w-72">
+                {agentFeatures.map(({ icon: Icon, title, description }) => (
+                  <div
+                    key={title}
+                    className="flex items-start gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface-1)] px-4 py-3 text-left shadow-sm"
+                  >
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--accent)]/20">
+                      <Icon className="size-3.5 text-[color:var(--accent-strong)]" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-[color:var(--text-strong)]">{title}</p>
+                      <p className="text-xs text-[color:var(--text-muted)] leading-relaxed">{description}</p>
                     </div>
                   </div>
-                </div>
-                <p className="relative z-10 text-[color:var(--text-muted)] leading-relaxed italic">"{item.quote}"</p>
+                ))}
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Shop by Category ──────────────────────────────────────────────────── */}
+      <section className="bg-[linear-gradient(180deg,var(--surface-2)_0%,var(--bg)_100%)] px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="space-y-1">
+            <Badge
+              variant="outline"
+              className="rounded-full border-[color:var(--border)] bg-[color:var(--surface-1)] text-[color:var(--text-muted)] text-[11px] tracking-widest uppercase"
+            >
+              Browse by type
+            </Badge>
+            <h2 className="text-3xl font-bold text-[color:var(--text-primary)] tracking-tight">
+              Shop by Category
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            {categories.map((cat) => (
+              <Link
+                key={cat.slug}
+                href={`/products?category=${cat.slug}`}
+                className="group relative overflow-hidden rounded-2xl border border-[color:var(--border)] shadow-[var(--shadow-soft)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[var(--shadow-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]"
+              >
+                <div className="relative h-56 w-full overflow-hidden">
+                  <Image
+                    src={cat.image}
+                    alt={cat.title}
+                    fill
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    sizes="(max-width: 640px) 100vw, 33vw"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                  <div className="absolute bottom-4 left-5">
+                    <h3 className="text-2xl font-bold text-white drop-shadow-md">{cat.title}</h3>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between bg-[color:var(--surface-1)] px-5 py-4">
+                  <p className="text-sm text-[color:var(--text-muted)] leading-snug">{cat.description}</p>
+                  <ArrowRight className="ml-3 size-4 shrink-0 text-[color:var(--accent-strong)] transition-transform group-hover:translate-x-1" />
+                </div>
+              </Link>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="bg-[color:var(--bg)] px-6 py-16">
-        <div className="relative mx-auto max-w-screen-xl overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[linear-gradient(135deg,var(--surface-3)_0%,var(--surface-2)_55%,var(--bg)_100%)] p-10 text-center shadow-[var(--shadow-strong)]">
-          {/* Decorative accents */}
-          <div className="pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full bg-[color:var(--accent)] opacity-10 blur-3xl"></div>
-          <div className="pointer-events-none absolute -bottom-10 -left-10 h-60 w-60 rounded-full bg-[color:var(--accent-strong)] opacity-10 blur-3xl"></div>
+      {/* ── Testimonials ──────────────────────────────────────────────────────── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="space-y-1 text-center">
+            <Badge
+              variant="outline"
+              className="rounded-full border-[color:var(--border)] bg-[color:var(--surface-1)] text-[color:var(--text-muted)] text-[11px] tracking-widest uppercase"
+            >
+              Customer love
+            </Badge>
+            <h2 className="text-3xl font-bold text-[color:var(--text-primary)] tracking-tight">
+              What Our Customers Say
+            </h2>
+          </div>
 
-          <div className="relative z-10">
-            <div className="mb-4 flex items-center justify-center gap-3">
-              <div className="relative h-14 w-14 overflow-hidden rounded-xl border-2 border-[color:var(--accent)] shadow-md">
-                <Image
-                  src={sectionImages["Join Our Bakery Newsletter"]}
-                  alt="Join Our Bakery Newsletter"
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <h2 className="text-3xl font-bold text-[color:var(--text-primary)] lg:text-4xl">
-                Join Our Bakery Newsletter
-              </h2>
-            </div>
-            <p className="mt-4 text-lg text-[color:var(--text-muted)]">
-              Receive seasonal menu updates, exclusive offers, and baking stories.
-            </p>
-            <form className="mx-auto mt-8 flex max-w-xl flex-col gap-3 sm:flex-row">
-              <input
-                type="email"
-                required
-                placeholder="Enter your email"
-                className="w-full bg-[color:var(--surface-1)] shadow-lg"
-              />
-              <button
-                type="submit"
-                className="group whitespace-nowrap rounded-full bg-[color:var(--accent)] px-6 py-3 font-semibold text-[color:var(--accent-contrast)] shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-strong)]"
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            {testimonials.map((t) => (
+              <Card
+                key={t.author}
+                className="border-[color:var(--border)] bg-[color:var(--surface-1)] shadow-[var(--shadow-soft)] py-6 gap-4"
               >
-                <span className="flex items-center gap-2">
-                  Subscribe
-                  <svg
-                    className="h-4 w-4 transition-transform group-hover:translate-x-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M14 5l7 7m0 0l-7 7m7-7H3"
-                    />
-                  </svg>
-                </span>
-              </button>
-            </form>
+                <CardContent className="px-6 space-y-4">
+                  <div className="flex gap-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="size-4 fill-[color:var(--accent)] text-[color:var(--accent)]" />
+                    ))}
+                  </div>
+                  <p className="text-[color:var(--text-muted)] leading-relaxed italic text-sm">
+                    &ldquo;{t.quote}&rdquo;
+                  </p>
+                  <Separator className="bg-[color:var(--border)]" />
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10 border-2 border-[color:var(--accent)]">
+                      <AvatarImage src={t.image} alt={t.author} />
+                      <AvatarFallback className="bg-[color:var(--surface-2)] text-[color:var(--text-strong)] text-xs font-bold">
+                        {t.author.split(" ").map((n) => n[0]).join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-semibold text-[color:var(--text-strong)]">{t.author}</p>
+                      <p className="text-xs text-[color:var(--text-muted)]">{t.role}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
       </section>
+
+      {/* ── Newsletter ────────────────────────────────────────────────────────── */}
+      <section className="px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="relative overflow-hidden rounded-3xl border border-[color:var(--border)] bg-[linear-gradient(135deg,var(--surface-3)_0%,var(--surface-2)_60%,var(--bg)_100%)] px-8 py-14 text-center shadow-[var(--shadow-strong)]">
+            <div className="pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full bg-[color:var(--accent)] opacity-10 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-12 -left-12 h-64 w-64 rounded-full bg-[color:var(--accent-strong)] opacity-10 blur-3xl" />
+
+            <div className="relative z-10 space-y-6">
+              <div className="space-y-2">
+                <Badge
+                  variant="outline"
+                  className="rounded-full border-[color:var(--border)] bg-[color:var(--surface-1)] text-[color:var(--text-muted)] text-[11px] tracking-widest uppercase"
+                >
+                  Stay in the loop
+                </Badge>
+                <h2 className="text-3xl font-bold text-[color:var(--text-primary)] lg:text-4xl tracking-tight">
+                  Join Our Bakery Newsletter
+                </h2>
+                <p className="text-[color:var(--text-muted)] max-w-lg mx-auto leading-relaxed">
+                  Seasonal menu drops, exclusive early-access offers, and baking stories straight to your inbox.
+                </p>
+              </div>
+
+              <form className="mx-auto flex max-w-md flex-col gap-3 sm:flex-row">
+                <Input
+                  type="email"
+                  required
+                  placeholder="your@email.com"
+                  className="rounded-full border-[color:var(--border-strong)] bg-[color:var(--surface-1)] px-5 text-[color:var(--text-primary)] placeholder:text-[color:var(--text-muted)] focus-visible:ring-[color:var(--accent)] shadow-sm flex-1"
+                />
+                <Button
+                  type="submit"
+                  className="rounded-full bg-[color:var(--accent)] text-[color:var(--accent-contrast)] hover:bg-[color:var(--accent-strong)] font-semibold shadow-[var(--shadow-soft)] hover:shadow-[var(--shadow-strong)] hover:-translate-y-0.5 transition-all shrink-0"
+                >
+                  Subscribe
+                  <ArrowRight className="size-3.5" />
+                </Button>
+              </form>
+
+              <p className="text-xs text-[color:var(--text-muted)] opacity-70">
+                No spam. Unsubscribe at any time.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </div>
   );
 }

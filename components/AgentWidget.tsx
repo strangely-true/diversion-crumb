@@ -40,14 +40,6 @@ export default function AgentWidget() {
 
     return (
         <>
-            <div
-                onClick={closeSidebar}
-                className={`fixed inset-0 z-[79] bg-black/30 transition-opacity duration-500 ${
-                    isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-                }`}
-                aria-hidden={!isSidebarOpen}
-            />
-
             {/* ── Sidebar toggle tab ─────────────────────────────────────────────── */}
             <button
                 type="button"
@@ -125,12 +117,12 @@ export default function AgentWidget() {
                 <div className="flex items-center gap-2 border-b border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-xs shrink-0">
                     <span
                         className={`h-2 w-2 rounded-full shrink-0 ${isActive
-                                ? "bg-green-500 animate-pulse"
-                                : isConnecting
-                                    ? "bg-amber-400 animate-pulse"
-                                    : isEscalated
-                                        ? "bg-blue-400 animate-pulse"
-                                        : "bg-[color:var(--text-muted)]"
+                            ? "bg-green-500 animate-pulse"
+                            : isConnecting
+                                ? "bg-amber-400 animate-pulse"
+                                : isEscalated
+                                    ? "bg-blue-400 animate-pulse"
+                                    : "bg-[color:var(--text-muted)]"
                             }`}
                     />
                     <span className="text-[color:var(--text-muted)]">
