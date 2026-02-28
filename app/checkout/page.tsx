@@ -6,7 +6,7 @@ import CheckoutForm from "@/components/CheckoutForm";
 import { useCart } from "@/context/CartContext";
 
 export default function CheckoutPage() {
-    const { subtotal, tax, shipping, total, totalItems } = useCart();
+    const { subtotal, tax, shipping, total, totalItems, cartId, reloadCart } = useCart();
 
     return (
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
@@ -74,7 +74,7 @@ export default function CheckoutPage() {
                     </div>
                 ) : (
                     <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-                        <CheckoutForm amount={total} />
+                        <CheckoutForm amount={total} cartId={cartId} onCheckoutComplete={reloadCart} />
                         <CartSummary
                             subtotal={subtotal}
                             tax={tax}

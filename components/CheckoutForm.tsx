@@ -1,13 +1,16 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { createMockStripeCheckout } from "@/lib/stripe";
+import { createOrderFromCart, processMockPayment } from "@/lib/api/checkout";
+import { ApiError } from "@/lib/api/client";
 
 type CheckoutFormProps = {
     amount: number;
+    cartId: string | null;
+    onCheckoutComplete: () => Promise<void>;
 };
 
-export default function CheckoutForm({ amount }: CheckoutFormProps) {
+export default function CheckoutForm({ amount, cartId, onCheckoutComplete }: CheckoutFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState("");
 
@@ -17,12 +20,45 @@ export default function CheckoutForm({ amount }: CheckoutFormProps) {
         setMessage("");
 
         const formData = new FormData(event.currentTarget);
-        const email = String(formData.get("email") ?? "");
+        try {
+            if (!cartId) {
+                setMessage("Cart not ready. Please refresh and try again.");
+                setIsSubmitting(false);
+                return;
+            }
 
-        const result = await createMockStripeCheckout({ amount, email });
-        setMessage(
-            `Payment session created: ${result.sessionId}. Redirect URL: ${result.checkoutUrl}`,
-        );
+            const firstName = String(formData.get("firstName") ?? "").trim();
+            const lastName = String(formData.get("lastName") ?? "").trim();
+            const phone = String(formData.get("phone") ?? "").trim();
+            const address = String(formData.get("address") ?? "").trim();
+            const city = String(formData.get("city") ?? "").trim();
+            const postalCode = String(formData.get("postalCode") ?? "").trim();
+            const country = String(formData.get("country") ?? "").trim();
+
+            const order = await createOrderFromCart({
+                cartId,
+                shippingAddress: {
+                    fullName: `${firstName} ${lastName}`.trim(),
+                    phone,
+                    line1: address,
+                    city,
+                    postalCode,
+                    country,
+                },
+            });
+
+            const payment = await processMockPayment({
+                orderId: order.id,
+                method: "CARD",
+                forceResult: "success",
+            });
+
+            await onCheckoutComplete();
+            setMessage(`Order ${order.id} created. Payment ${payment.paymentResult}.`);
+        } catch (error) {
+            const fallback = "Checkout failed. Please try again.";
+            setMessage(error instanceof ApiError ? error.message : fallback);
+        }
         setIsSubmitting(false);
     }
 

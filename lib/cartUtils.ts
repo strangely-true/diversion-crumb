@@ -48,8 +48,8 @@ export function calculateCartTotals(items: CartItem[]) {
     const subtotal = roundToTwo(
         items.reduce((sum, item) => sum + item.price * item.quantity, 0),
     );
-    const tax = roundToTwo(subtotal * 0.05);
-    const shipping = subtotal === 0 ? 0 : subtotal > 500 ? 0 : 50;
+    const tax = roundToTwo(subtotal * 0.08);
+    const shipping = subtotal === 0 ? 0 : subtotal >= 50 ? 0 : 5;
     const total = roundToTwo(subtotal + tax + shipping);
 
     return { subtotal, tax, shipping, total };

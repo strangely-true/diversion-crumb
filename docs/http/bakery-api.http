@@ -1,0 +1,180 @@
+@baseUrl = http://localhost:3000
+@adminUserId =
+@customerUserId =
+@categoryId =
+@productId =
+@variantId =
+@cartId =
+@cartItemId =
+@orderId =
+
+### List products (customer)
+GET {{baseUrl}}/api/products?page=1&pageSize=12
+
+### List products (admin + drafts)
+GET {{baseUrl}}/api/products?includeDrafts=true
+x-user-id: {{adminUserId}}
+x-user-role: ADMIN
+
+### Create product (admin)
+POST {{baseUrl}}/api/products
+Content-Type: application/json
+x-user-id: {{adminUserId}}
+x-user-role: ADMIN
+
+{
+  "name": "Chocolate Fudge Cake",
+  "slug": "chocolate-fudge-cake",
+  "description": "Rich chocolate sponge with fudge frosting",
+  "status": "ACTIVE",
+  "tags": ["featured"],
+  "heroImage": "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80",
+  "categoryId": "{{categoryId}}",
+  "images": [
+    {
+      "url": "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80",
+      "altText": "Chocolate cake",
+      "sortOrder": 0
+    }
+  ],
+  "variants": [
+    {
+      "sku": "CAKE-CHOC-1KG",
+      "label": "1kg",
+      "price": 36,
+      "currency": "USD",
+      "initialStock": 20,
+      "lowStockThreshold": 5
+    }
+  ]
+}
+
+### Get product by id
+GET {{baseUrl}}/api/products/{{productId}}
+
+### Update product (admin)
+PATCH {{baseUrl}}/api/products/{{productId}}
+Content-Type: application/json
+x-user-id: {{adminUserId}}
+x-user-role: ADMIN
+
+{
+  "name": "Chocolate Fudge Cake - Updated",
+  "status": "ACTIVE"
+}
+
+### Adjust inventory (admin)
+PATCH {{baseUrl}}/api/products/variants/{{variantId}}/inventory
+Content-Type: application/json
+x-user-id: {{adminUserId}}
+x-user-role: ADMIN
+
+{
+  "quantityDelta": 5,
+  "reason": "MANUAL",
+  "reference": "HTTP file adjustment"
+}
+
+### Get cart
+GET {{baseUrl}}/api/cart?currency=USD
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+### Add cart item
+POST {{baseUrl}}/api/cart/items
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{
+  "variantId": "{{variantId}}",
+  "quantity": 1,
+  "currency": "USD"
+}
+
+### Update cart item
+PATCH {{baseUrl}}/api/cart/items/{{cartItemId}}
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{
+  "quantity": 2
+}
+
+### Remove cart item
+DELETE {{baseUrl}}/api/cart/items/{{cartItemId}}
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{}
+
+### Create order from cart
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{
+  "cartId": "{{cartId}}",
+  "shippingAddress": {
+    "fullName": "Mia Customer",
+    "phone": "+15550000002",
+    "line1": "42 Baker Street",
+    "city": "Austin",
+    "state": "TX",
+    "postalCode": "73301",
+    "country": "US"
+  }
+}
+
+### Get my orders
+GET {{baseUrl}}/api/orders
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+### Get order by id
+GET {{baseUrl}}/api/orders/{{orderId}}
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+### Get order tracking
+GET {{baseUrl}}/api/orders/{{orderId}}/tracking
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+### Update order status (admin)
+PATCH {{baseUrl}}/api/orders/{{orderId}}/status
+Content-Type: application/json
+x-user-id: {{adminUserId}}
+x-user-role: ADMIN
+
+{
+  "status": "PREPARING",
+  "note": "Moved to kitchen prep"
+}
+
+### Process payment (force success)
+POST {{baseUrl}}/api/payments
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{
+  "orderId": "{{orderId}}",
+  "method": "CARD",
+  "forceResult": "success"
+}
+
+### Process payment (force failure)
+POST {{baseUrl}}/api/payments
+Content-Type: application/json
+x-user-id: {{customerUserId}}
+x-user-role: CUSTOMER
+
+{
+  "orderId": "{{orderId}}",
+  "method": "CARD",
+  "forceResult": "failure"
+}

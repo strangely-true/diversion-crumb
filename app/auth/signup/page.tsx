@@ -3,14 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import AuthThemeToggle from "@/components/AuthThemeToggle";
+import { ApiError } from "@/lib/api/client";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SignupPage() {
+    const router = useRouter();
+    const { signup } = useAuth();
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [acceptTerms, setAcceptTerms] = useState(false);
 
-    function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setError("");
         setSuccess("");
@@ -19,6 +24,7 @@ export default function SignupPage() {
         const email = String(formData.get("email") ?? "").trim();
         const password = String(formData.get("password") ?? "").trim();
         const confirmPassword = String(formData.get("confirmPassword") ?? "").trim();
+        const fullName = String(formData.get("fullName") ?? "").trim();
 
         if (!email.includes("@")) {
             setError("Please enter a valid email address.");
@@ -40,7 +46,20 @@ export default function SignupPage() {
             return;
         }
 
-        setSuccess("Account created successfully! Redirecting...");
+        try {
+            await signup({
+                email,
+                password,
+                confirmPassword,
+                name: fullName || undefined,
+            });
+            setSuccess("Account created successfully! Redirecting...");
+            window.setTimeout(() => {
+                router.push("/account");
+            }, 600);
+        } catch (err) {
+            setError(err instanceof ApiError ? err.message : "Signup failed. Please try again.");
+        }
     }
 
     return (
@@ -179,6 +198,26 @@ export default function SignupPage() {
 
                         {/* Signup Form */}
                         <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label htmlFor="fullName" className="mb-2 block text-sm font-semibold text-[color:var(--text-strong)]">
+                            Full Name
+                        </label>
+                        <div className="relative">
+                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                                <svg className="h-5 w-5 text-[color:var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                            </div>
+                            <input
+                                id="fullName"
+                                name="fullName"
+                                type="text"
+                                placeholder="Jane Doe"
+                                className="w-full rounded-xl border-2 border-[color:var(--border)] bg-[color:var(--surface-2)] py-2.5 pl-12 pr-4 text-[color:var(--text-primary)] transition-all focus:border-[color:var(--accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--accent)]/20"
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label htmlFor="email" className="mb-2 block text-sm font-semibold text-[color:var(--text-strong)]">
                             Email Address

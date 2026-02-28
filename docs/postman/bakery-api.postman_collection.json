@@ -1,0 +1,349 @@
+{
+  "info": {
+    "name": "Bakery API",
+    "description": "Core backend endpoints for products, cart, orders, tracking, and payments.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List Products (Customer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?page=1&pageSize=12",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "12" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Products (Admin + Drafts)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?includeDrafts=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"],
+              "query": [{ "key": "includeDrafts", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Create Product (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Chocolate Fudge Cake\",\n  \"slug\": \"chocolate-fudge-cake\",\n  \"description\": \"Rich chocolate sponge with fudge frosting\",\n  \"status\": \"ACTIVE\",\n  \"tags\": [\"featured\"],\n  \"heroImage\": \"https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"images\": [\n    {\n      \"url\": \"https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80\",\n      \"altText\": \"Chocolate cake\",\n      \"sortOrder\": 0\n    }\n  ],\n  \"variants\": [\n    {\n      \"sku\": \"CAKE-CHOC-1KG\",\n      \"label\": \"1kg\",\n      \"price\": 36,\n      \"currency\": \"USD\",\n      \"initialStock\": 20,\n      \"lowStockThreshold\": 5\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products"]
+            }
+          }
+        },
+        {
+          "name": "Get Product By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "{{productId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Product (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Chocolate Fudge Cake - Updated\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "{{productId}}"]
+            }
+          }
+        },
+        {
+          "name": "Adjust Inventory (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantityDelta\": 5,\n  \"reason\": \"MANUAL\",\n  \"reference\": \"Postman adjustment\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/products/variants/{{variantId}}/inventory",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "variants", "{{variantId}}", "inventory"]
+            }
+          }
+        },
+        {
+          "name": "Delete Product (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "products", "{{productId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cart",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/cart?currency=USD",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cart"],
+              "query": [{ "key": "currency", "value": "USD" }]
+            }
+          }
+        },
+        {
+          "name": "Add Cart Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{variantId}}\",\n  \"quantity\": 1,\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/cart/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cart", "items"]
+            }
+          }
+        },
+        {
+          "name": "Update Cart Item Quantity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/cart/items/{{cartItemId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cart", "items", "{{cartItemId}}"]
+            }
+          }
+        },
+        {
+          "name": "Remove Cart Item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/cart/items/{{cartItemId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cart", "items", "{{cartItemId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders & Tracking",
+      "item": [
+        {
+          "name": "Create Order From Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cartId\": \"{{cartId}}\",\n  \"shippingAddress\": {\n    \"fullName\": \"Mia Customer\",\n    \"phone\": \"+15550000002\",\n    \"line1\": \"42 Baker Street\",\n    \"city\": \"Austin\",\n    \"state\": \"TX\",\n    \"postalCode\": \"73301\",\n    \"country\": \"US\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"]
+            }
+          }
+        },
+        {
+          "name": "Get My Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"]
+            }
+          }
+        },
+        {
+          "name": "Get Order By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Order Tracking",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/tracking",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "tracking"]
+            }
+          }
+        },
+        {
+          "name": "Update Order Status (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{adminUserId}}" },
+              { "key": "x-user-role", "value": "ADMIN" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PREPARING\",\n  \"note\": \"Moved to kitchen prep\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Process Payment (Success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"CARD\",\n  \"forceResult\": \"success\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payments"]
+            }
+          }
+        },
+        {
+          "name": "Process Payment (Failure)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{customerUserId}}" },
+              { "key": "x-user-role", "value": "CUSTOMER" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"method\": \"CARD\",\n  \"forceResult\": \"failure\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "payments"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

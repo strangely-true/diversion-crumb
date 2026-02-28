@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { products, type ProductCategory } from "@/lib/products";
+import type { ProductCategory } from "@/lib/products";
+import { useProducts } from "@/hooks/useProducts";
 
 type SortOption = "price-asc" | "price-desc";
 
 const categories: Array<ProductCategory | "All"> = ["All", "Cakes", "Bread", "Pastries"];
 
 export default function ProductsPage() {
+    const { products, isLoading, error } = useProducts();
     const [activeCategory, setActiveCategory] = useState<ProductCategory | "All">("All");
     const [sortBy, setSortBy] = useState<SortOption>("price-asc");
 
@@ -22,7 +24,7 @@ export default function ProductsPage() {
             sortBy === "price-asc" ? a.price - b.price : b.price - a.price,
         );
         return filtered;
-    }, [activeCategory, sortBy]);
+    }, [activeCategory, sortBy, products]);
 
     return (
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
@@ -81,6 +83,14 @@ export default function ProductsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                    {isLoading ? (
+                        <p className="col-span-full text-sm text-[color:var(--text-muted)]">Loading bakery products...</p>
+                    ) : null}
+
+                    {error ? (
+                        <p className="col-span-full text-sm text-red-500">{error}</p>
+                    ) : null}
+
                     {visibleProducts.map((product) => (
                         <ProductCard key={product.id} product={product} />
                     ))}

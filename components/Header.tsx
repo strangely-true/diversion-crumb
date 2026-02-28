@@ -6,11 +6,13 @@ import { Moon, ShoppingBag, Sun } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
+import { useAuth } from "@/context/AuthContext";
 
 type ThemeMode = "light" | "dark";
 
 export default function Header() {
     const { totalItems, toastMessage } = useCart();
+    const { user, isAdmin, isAuthenticated, logout } = useAuth();
     const [theme, setTheme] = useState<ThemeMode>("light");
     const pathname = usePathname();
 
@@ -57,7 +59,8 @@ export default function Header() {
                     {[
                         { href: "/", label: "Home" },
                         { href: "/products", label: "Products" },
-                        { href: "/account", label: "Account" },
+                        ...(isAuthenticated ? [{ href: "/account", label: "Account" }] : []),
+                        ...(isAdmin ? [{ href: "/admin", label: "Admin" }] : []),
                     ].map((item) => {
                         const isActive = pathname === item.href;
                         return (
@@ -77,6 +80,26 @@ export default function Header() {
                 </nav>
 
                 <div className="flex items-center gap-2 justify-self-end">
+                    {!isAuthenticated ? (
+                        <Link
+                            href="/auth/login"
+                            className="hidden rounded-full border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-sm font-semibold text-[color:var(--text-strong)] transition hover:border-[color:var(--border-strong)] sm:inline-flex"
+                        >
+                            Login
+                        </Link>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void logout().then(() => {
+                                    window.location.href = "/auth/login";
+                                });
+                            }}
+                            className="hidden rounded-full border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-sm font-semibold text-[color:var(--text-strong)] transition hover:border-[color:var(--border-strong)] sm:inline-flex"
+                        >
+                            Logout
+                        </button>
+                    )}
                     <Link
                         href="/cart"
                         className="relative inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-[0.95rem] font-semibold text-[color:var(--text-strong)] transition hover:border-[color:var(--border-strong)]"
@@ -104,6 +127,12 @@ export default function Header() {
             {toastMessage ? (
                 <div className="pointer-events-none absolute right-6 top-[70px] rounded-lg bg-[color:var(--text-strong)] px-4 py-2 text-sm text-white shadow-lg">
                     {toastMessage}
+                </div>
+            ) : null}
+
+            {isAuthenticated && user?.email ? (
+                <div className="pointer-events-none absolute left-6 top-[70px] rounded-lg bg-[color:var(--surface-2)] px-3 py-1 text-xs text-[color:var(--text-muted)] shadow-[var(--shadow-soft)]">
+                    Signed in as {user.email}
                 </div>
             ) : null}
         </header>

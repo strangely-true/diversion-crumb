@@ -1,12 +1,37 @@
-import Image from "next/image";
+"use client";
 
-const mockOrders = [
-    { id: "ORD-1042", date: "2026-01-15", total: 48.0, status: "Delivered" },
-    { id: "ORD-0978", date: "2025-12-20", total: 26.0, status: "Delivered" },
-    { id: "ORD-0881", date: "2025-11-03", total: 62.0, status: "Delivered" },
-];
+import Image from "next/image";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { fetchMyOrders, type MyOrder } from "@/lib/api/orders";
 
 export default function AccountPage() {
+    const { user } = useAuth();
+    const [orders, setOrders] = useState<MyOrder[]>([]);
+
+    useEffect(() => {
+        let active = true;
+
+        async function loadOrders() {
+            try {
+                const data = await fetchMyOrders();
+                if (active) {
+                    setOrders(data);
+                }
+            } catch {
+                if (active) {
+                    setOrders([]);
+                }
+            }
+        }
+
+        void loadOrders();
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
     return (
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
             {/* Decorative blobs */}
@@ -40,7 +65,7 @@ export default function AccountPage() {
                                 />
                             </div>
                             <div className="text-center">
-                                <p className="text-xl font-bold text-[color:var(--text-primary)]">Jane Baker</p>
+                                <p className="text-xl font-bold text-[color:var(--text-primary)]">{user?.name ?? "Customer"}</p>
                                 <p className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-[color:var(--accent)]">
                                     <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                                         <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
@@ -56,7 +81,7 @@ export default function AccountPage() {
                                 </svg>
                                 <div>
                                     <p className="font-semibold text-[color:var(--text-strong)]">Name</p>
-                                    <p className="text-[color:var(--text-muted)]">Jane Baker</p>
+                                    <p className="text-[color:var(--text-muted)]">{user?.name ?? "Customer"}</p>
                                 </div>
                             </div>
                             <div className="flex items-start gap-3">
@@ -65,7 +90,7 @@ export default function AccountPage() {
                                 </svg>
                                 <div>
                                     <p className="font-semibold text-[color:var(--text-strong)]">Email</p>
-                                    <p className="text-[color:var(--text-muted)]">jane@example.com</p>
+                                    <p className="text-[color:var(--text-muted)]">{user?.email ?? "Not available"}</p>
                                 </div>
                             </div>
                             <div className="flex items-start gap-3">
@@ -85,11 +110,11 @@ export default function AccountPage() {
                         <div className="mb-6 flex items-center justify-between">
                             <h2 className="text-2xl font-bold text-[color:var(--text-primary)]">Order History</h2>
                             <span className="rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-sm font-semibold text-[color:var(--accent)]">
-                                {mockOrders.length} Orders
+                                {orders.length} Orders
                             </span>
                         </div>
                         <div className="space-y-4">
-                            {mockOrders.map((order) => (
+                            {orders.map((order) => (
                                 <div
                                     key={order.id}
                                     className="group flex flex-col gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface-2)] p-5 shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-strong)] sm:flex-row sm:items-center sm:justify-between"
@@ -101,18 +126,22 @@ export default function AccountPage() {
                                             </svg>
                                         </div>
                                         <div>
-                                            <p className="font-bold text-[color:var(--text-primary)]">{order.id}</p>
-                                            <p className="text-xs text-[color:var(--text-muted)]">{order.date}</p>
+                                            <p className="font-bold text-[color:var(--text-primary)]">{order.orderNumber}</p>
+                                            <p className="text-xs text-[color:var(--text-muted)]">{new Date(order.placedAt).toLocaleDateString()}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        <p className="text-lg font-bold text-[color:var(--text-primary)]">${order.total.toFixed(2)}</p>
+                                        <p className="text-lg font-bold text-[color:var(--text-primary)]">${Number(order.total).toFixed(2)}</p>
                                         <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-semibold text-green-600 dark:text-green-400">
                                             {order.status}
                                         </span>
                                     </div>
                                 </div>
                             ))}
+
+                            {orders.length === 0 ? (
+                                <p className="text-sm text-[color:var(--text-muted)]">No orders yet.</p>
+                            ) : null}
                         </div>
                     </div>
                 </div>

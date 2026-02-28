@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Playfair_Display, Source_Sans_3 } from "next/font/google";
 import { CartProvider } from "@/context/CartContext";
+import { AuthProvider } from "@/context/AuthContext";
 import ThemeInitializer from "@/components/ThemeInitializer";
 import LayoutContent from "./LayoutContent";
 import "./globals.css";
@@ -44,9 +45,11 @@ export default function RootLayout({
         className={`${sourceSans.variable} ${playfairDisplay.variable} ${geistMono.variable} antialiased bg-[color:var(--bg)] text-[color:var(--text-primary)]`}
       >
         <ThemeInitializer />
-        <CartProvider>
-          <LayoutContent>{children}</LayoutContent>
-        </CartProvider>
+        <AuthProvider>
+          <CartProvider>
+            <LayoutContent>{children}</LayoutContent>
+          </CartProvider>
+        </AuthProvider>
       </body>
     </html>
   );

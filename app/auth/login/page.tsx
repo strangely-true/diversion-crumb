@@ -3,14 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import AuthThemeToggle from "@/components/AuthThemeToggle";
+import { ApiError } from "@/lib/api/client";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
+    const router = useRouter();
+    const { login } = useAuth();
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [rememberMe, setRememberMe] = useState(false);
 
-    function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         setError("");
         setSuccess("");
@@ -29,7 +34,15 @@ export default function LoginPage() {
             return;
         }
 
-        setSuccess("Login successful! Redirecting...");
+        try {
+            await login(email, password);
+            setSuccess("Login successful! Redirecting...");
+            window.setTimeout(() => {
+                router.push("/");
+            }, 600);
+        } catch (err) {
+            setError(err instanceof ApiError ? err.message : "Login failed. Please try again.");
+        }
     }
 
     return (
