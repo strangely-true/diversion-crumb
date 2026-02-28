@@ -4,6 +4,8 @@ type CartSummaryProps = {
     subtotal: number;
     tax: number;
     shipping: number;
+    discount?: number;
+    discountPercent?: number;
     total: number;
     ctaLabel?: string;
     ctaHref?: string;
@@ -14,6 +16,8 @@ export default function CartSummary({
     subtotal,
     tax,
     shipping,
+    discount = 0,
+    discountPercent,
     total,
     ctaLabel = "Proceed to Checkout",
     ctaHref = "/checkout",
@@ -29,7 +33,7 @@ export default function CartSummary({
                 </div>
                 <h2 className="text-2xl font-bold text-[color:var(--text-primary)]">Order Summary</h2>
             </div>
-            
+
             <div className="space-y-4 border-b border-[color:var(--border)] pb-5">
                 <div className="flex items-center justify-between text-[color:var(--text-muted)]">
                     <span className="flex items-center gap-2">
@@ -64,8 +68,19 @@ export default function CartSummary({
                         )}
                     </span>
                 </div>
+                {discount > 0 ? (
+                    <div className="flex items-center justify-between text-[color:var(--text-muted)]">
+                        <span className="flex items-center gap-2">
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5 0h6v6" />
+                            </svg>
+                            Discount{typeof discountPercent === "number" && discountPercent > 0 ? ` (${discountPercent}%)` : ""}
+                        </span>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">-${discount.toFixed(2)}</span>
+                    </div>
+                ) : null}
             </div>
-            
+
             <div className="my-6 flex items-center justify-between">
                 <span className="text-lg font-semibold text-[color:var(--text-strong)]">Total</span>
                 <span className="text-3xl font-bold text-[color:var(--accent)]">${total.toFixed(2)}</span>

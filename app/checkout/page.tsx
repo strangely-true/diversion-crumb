@@ -1,18 +1,52 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import CartSummary from "@/components/CartSummary";
 import CheckoutForm from "@/components/CheckoutForm";
 import { useCart } from "@/context/CartContext";
 
 export default function CheckoutPage() {
     const { subtotal, tax, shipping, total, totalItems, cartId, reloadCart } = useCart();
+    const [approvedDiscountPercent, setApprovedDiscountPercent] = useState<number>(0);
+
+    useEffect(() => {
+        const loadApprovedDiscount = async () => {
+            try {
+                const sessionId = localStorage.getItem("bakery_agent_session");
+                if (!sessionId) return;
+
+                const res = await fetch(`/api/vapi/conversation/approved-discount?sessionId=${encodeURIComponent(sessionId)}`);
+                if (!res.ok) return;
+
+                const data = await res.json() as { approvedDiscountPercent?: number | null };
+                const next = typeof data.approvedDiscountPercent === "number" ? data.approvedDiscountPercent : 0;
+                if (Number.isFinite(next) && next >= 0) {
+                    setApprovedDiscountPercent(next);
+                }
+            } catch {
+                // Keep checkout functional even if approval lookup fails.
+            }
+        };
+
+        void loadApprovedDiscount();
+    }, []);
+
+    const discountAmount = useMemo(
+        () => Number((subtotal * (approvedDiscountPercent / 100)).toFixed(2)),
+        [approvedDiscountPercent, subtotal],
+    );
+
+    const payableTotal = useMemo(
+        () => Number((subtotal + tax + shipping - discountAmount).toFixed(2)),
+        [discountAmount, shipping, subtotal, tax],
+    );
 
     return (
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
             {/* Decorative blob */}
             <div className="absolute right-0 top-0 h-96 w-96 rounded-full bg-[color:var(--accent)] opacity-5 blur-3xl" />
-            
+
             <div className="relative mx-auto max-w-7xl space-y-10">
                 <div>
                     <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--accent)]">
@@ -74,12 +108,14 @@ export default function CheckoutPage() {
                     </div>
                 ) : (
                     <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-                        <CheckoutForm amount={total} cartId={cartId} onCheckoutComplete={reloadCart} />
+                        <CheckoutForm amount={payableTotal} cartId={cartId} onCheckoutComplete={reloadCart} />
                         <CartSummary
                             subtotal={subtotal}
                             tax={tax}
                             shipping={shipping}
-                            total={total}
+                            discount={discountAmount}
+                            discountPercent={approvedDiscountPercent}
+                            total={payableTotal}
                             ctaLabel="Back to Cart"
                             ctaHref="/cart"
                         />

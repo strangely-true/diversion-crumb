@@ -36,6 +36,15 @@ function buildConversationTranscript(
     .join("\n\n");
 }
 
+function parseApprovedPercentFromAdminText(content: string) {
+  if (!/(approve|approved|approval|discount)/i.test(content)) return null;
+  const match = content.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return Math.min(100, Math.max(0, value));
+}
+
 export async function summarizeConversationAction(formData: FormData) {
   try {
     await requireAdmin();
@@ -182,6 +191,33 @@ export async function sendAdminReplyAction(formData: FormData) {
       agentType: AgentType.HUMAN,
       metadata: { sentByAdminId: session.userId, sentByAdminEmail: session.email },
     });
+
+    const approvedPercent = parseApprovedPercentFromAdminText(content);
+    if (approvedPercent !== null) {
+      const conversation = await ConversationService.getById(conversationId);
+      const currentMetadata = asRecord(conversation?.metadata) ?? {};
+
+      await ConversationService.patch(conversationId, {
+        metadata: {
+          ...currentMetadata,
+          approvedDiscountPercent: approvedPercent,
+          discountApprovedAt: new Date().toISOString(),
+          discountApprovedBy: session.email,
+        },
+      });
+
+      await ConversationService.addMessage(conversationId, {
+        role: MessageRole.SYSTEM,
+        content: `Discount approval captured from admin reply: ${approvedPercent}% approved by ${session.email}.`,
+        agentType: AgentType.HUMAN,
+        metadata: {
+          approvalType: "discount",
+          approvedPercent,
+          approvedBy: session.userId,
+          source: "admin-reply",
+        },
+      });
+    }
 
     revalidatePath("/admin/conversations");
   } catch (error) {

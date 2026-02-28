@@ -52,6 +52,15 @@ function getEscalationReason(messages: Array<{ role: string; content: string }>)
   return escalationMessage.content.replace("Escalated to human. Reason:", "").trim();
 }
 
+function getRequestedDiscountPercent(messages: Array<{ role: string; content: string }>) {
+  const reason = getEscalationReason(messages);
+  if (!reason) return null;
+  const match = reason.match(/requested\s+(\d+(?:\.\d+)?)%/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
 function getConversationInsight(metadata: unknown): ConversationInsight | null {
   const root = asRecord(metadata);
   if (!root) return null;
@@ -200,9 +209,22 @@ export default async function AdminConversationsPage() {
                       const metadata =
                         typeof conversation.metadata === "object" ? conversation.metadata as Record<string, unknown> : {};
                       const approvedPercent = metadata.approvedDiscountPercent;
+                      const requestedPercent = getRequestedDiscountPercent(conversation.messages);
+                      const fallbackPercent = 20;
                       return (
                         <div className="bg-yellow-500/10 border-yellow-200 mt-3 rounded border p-2">
                           <p className="text-xs font-medium mb-2">Discount Approval</p>
+                          <div className="mb-2 flex flex-wrap gap-2 text-[11px]">
+                            <Badge variant="outline">
+                              Requested: {requestedPercent !== null ? `${requestedPercent}%` : "Unknown"}
+                            </Badge>
+                            <Badge variant="outline">
+                              Allocated fallback: {fallbackPercent}%
+                            </Badge>
+                            <Badge variant={typeof approvedPercent === "number" ? "default" : "secondary"}>
+                              Effective now: {typeof approvedPercent === "number" ? `${approvedPercent}%` : `${fallbackPercent}%`}
+                            </Badge>
+                          </div>
                           {typeof approvedPercent === "number" ? (
                             <div className="space-y-2">
                               <p className="text-xs text-yellow-800">
@@ -235,6 +257,17 @@ export default async function AdminConversationsPage() {
                               {typeof approvedPercent === "number" ? "Update" : "Set"} Discount
                             </Button>
                           </form>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {[10, 15, 20, 25, 30].map((percent) => (
+                              <form key={percent} action={approveDiscountAction}>
+                                <input type="hidden" name="conversationId" value={conversation.id} />
+                                <input type="hidden" name="approvedDiscountPercent" value={String(percent)} />
+                                <Button type="submit" size="sm" variant="ghost" className="h-7 px-2 text-[11px]">
+                                  Set {percent}%
+                                </Button>
+                              </form>
+                            ))}
+                          </div>
                         </div>
                       );
                     })()}
