@@ -12,3 +12,351 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum CartStatus {
+  ACTIVE
+  CHECKED_OUT
+  ABANDONED
+  CLOSED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  WALLET
+  CASH
+}
+
+enum ShipmentStatus {
+  NOT_REQUIRED
+  PREPARING
+  SHIPPED
+  DELIVERED
+}
+
+enum InventoryReason {
+  INITIAL
+  PURCHASE
+  ADJUSTMENT
+  ORDER_FULFILLED
+  ORDER_CANCELLED
+  MANUAL
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  phone     String?  @db.VarChar(20)
+  role      UserRole @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  addresses             Address[]
+  carts                 Cart[]
+  orders                Order[]
+  inventoryTransactions InventoryTransaction[] @relation("InventoryCreatedBy")
+  orderStatusEvents     OrderStatusEvent[]      @relation("OrderStatusCreatedBy")
+}
+
+model Address {
+  id               String   @id @default(uuid())
+  user             User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String?
+  label            String?
+  line1            String
+  line2            String?
+  city             String
+  state            String?
+  postalCode       String?
+  country          String
+  isDefaultShipping Boolean  @default(false)
+  isDefaultBilling Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model ProductCategory {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  slug        String            @unique
+  description String?
+  parent      ProductCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  parentId    String?
+  children    ProductCategory[] @relation("CategoryHierarchy")
+  products    Product[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Product {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique
+  description String?
+  status      ProductStatus  @default(DRAFT)
+  tags        String[]       @default([])
+  heroImage   String?
+  category    ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  variants    ProductVariant[]
+  images      ProductImage[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([categoryId])
+}
+
+model ProductVariant {
+  id             String          @id @default(uuid())
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId      String
+  sku            String          @unique
+  label          String
+  description    String?
+  price          Decimal         @db.Decimal(10, 2)
+  compareAtPrice Decimal?        @db.Decimal(10, 2)
+  currency       String          @db.Char(3)
+  isActive       Boolean         @default(true)
+  weight         Decimal?        @db.Decimal(10, 2)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  inventory             InventoryLevel?
+  cartItems             CartItem[]
+  orderItems            OrderItem[]
+  inventoryTransactions InventoryTransaction[]
+
+  @@index([productId])
+}
+
+model ProductImage {
+  id        String  @id @default(uuid())
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  url       String
+  altText   String?
+  sortOrder Int     @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}
+
+model InventoryLevel {
+  id                String                 @id @default(uuid())
+  variant           ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId         String                 @unique
+  quantity          Int                    @default(0)
+  reserved          Int                    @default(0)
+  lowStockThreshold Int                    @default(0)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  transactions InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id          String          @id @default(uuid())
+  inventoryLevel InventoryLevel @relation(fields: [inventoryLevelId], references: [id], onDelete: Cascade)
+  inventoryLevelId String
+  variant        ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  variantId      String
+  quantity    Int
+  reason      InventoryReason
+  reference   String?
+  metadata    Json?
+  createdBy   User?           @relation("InventoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdAt   DateTime        @default(now())
+
+  @@index([inventoryLevelId])
+  @@index([variantId])
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  sessionId String?    @unique
+  status    CartStatus @default(ACTIVE)
+  currency  String     @db.Char(3)
+  expiresAt DateTime?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items CartItem[]
+  order Order? @relation("CartToOrder")
+
+  @@index([userId])
+}
+
+model CartItem {
+  id         String         @id @default(uuid())
+  cart       Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  cartId     String
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  variantId  String
+  quantity   Int
+  unitPrice  Decimal        @db.Decimal(10, 2)
+  notes      String?
+  createdAt  DateTime       @default(now())
+
+  @@unique([cartId, variantId])
+}
+
+model OrderAddress {
+  id         String  @id @default(uuid())
+  fullName   String
+  phone      String? @db.VarChar(20)
+  line1      String
+  line2      String?
+  city       String
+  state      String?
+  postalCode String?
+  country    String
+  createdAt  DateTime @default(now())
+
+  shippingOrders Order[] @relation("ShippingAddress")
+  billingOrders  Order[] @relation("BillingAddress")
+}
+
+model Order {
+  id                 String        @id @default(uuid())
+  orderNumber        String        @unique
+  user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId             String?
+  cart               Cart?         @relation("CartToOrder", fields: [cartId], references: [id], onDelete: SetNull)
+  cartId             String?       @unique
+  status             OrderStatus   @default(PENDING)
+  paymentStatus      PaymentStatus @default(PENDING)
+  shipmentStatus     ShipmentStatus @default(PREPARING)
+  subtotal           Decimal       @db.Decimal(12, 2)
+  tax                Decimal       @db.Decimal(12, 2)
+  shippingFee        Decimal       @db.Decimal(12, 2)
+  discountTotal      Decimal       @db.Decimal(12, 2)
+  total              Decimal       @db.Decimal(12, 2)
+  currency           String        @db.Char(3)
+  notes              String?
+  shippingAddress    OrderAddress  @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  shippingAddressId  String
+  billingAddress     OrderAddress  @relation("BillingAddress", fields: [billingAddressId], references: [id])
+  billingAddressId   String
+  placedAt           DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  items        OrderItem[]
+  payments     Payment[]
+  statusEvents OrderStatusEvent[]
+  shipments    Shipment[]
+
+  @@index([userId])
+}
+
+model OrderItem {
+  id          String         @id @default(uuid())
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantId   String?
+  productName String
+  variantName String?
+  quantity    Int
+  unitPrice   Decimal        @db.Decimal(12, 2)
+  currency    String         @db.Char(3)
+  imageUrl    String?
+  createdAt   DateTime       @default(now())
+
+  @@index([orderId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  provider      String
+  method        PaymentMethod
+  status        PaymentStatus
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String        @db.Char(3)
+  transactionId String?
+  metadata      Json?
+  processedAt   DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([orderId])
+}
+
+model OrderStatusEvent {
+  id          String       @id @default(uuid())
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  status      OrderStatus
+  note        String?
+  createdBy   User?        @relation("OrderStatusCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdAt   DateTime     @default(now())
+
+  @@index([orderId])
+}
+
+model Shipment {
+  id             String         @id @default(uuid())
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId        String
+  carrier        String?
+  trackingNumber String?        @unique
+  status         ShipmentStatus @default(PREPARING)
+  eta            DateTime?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  events ShipmentEvent[]
+
+  @@index([orderId])
+}
+
+model ShipmentEvent {
+  id          String         @id @default(uuid())
+  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipmentId  String
+  status      ShipmentStatus
+  description String?
+  location    String?
+  occurredAt  DateTime       @default(now())
+
+  @@index([shipmentId])
+}
