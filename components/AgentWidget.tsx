@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Loader2, ChevronDown, X } from "lucide-react";
 import { useAgent, type ChatMessage } from "@/context/AgentContext";
 import { Persona, type PersonaState } from "@/components/ai-elements/persona";
@@ -78,6 +78,7 @@ export default function AgentWidget() {
   const isConnecting = status === "connecting";
   const isActive = status === "active";
   const isEscalated = status === "escalated";
+  const previousStatusRef = useRef(status);
 
   const [isExpanded, setIsExpanded] = useState(false);
   const personaState = useMemo(
@@ -121,10 +122,21 @@ export default function AgentWidget() {
     }
   }, []);
 
-  const handleOpen = useCallback(() => {
+  const handleOpen = useCallback(async () => {
     playOpenSound();
     setIsExpanded(true);
-  }, [playOpenSound]);
+
+    if (!isActive && !isConnecting && !isEscalated) {
+      await startCall();
+    }
+  }, [isActive, isConnecting, isEscalated, playOpenSound, startCall]);
+
+  useEffect(() => {
+    if (previousStatusRef.current !== "idle" && status === "idle") {
+      setIsExpanded(false);
+    }
+    previousStatusRef.current = status;
+  }, [status]);
 
   return (
     <TooltipProvider delayDuration={120}>

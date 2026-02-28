@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ProductService } from "@/server/services/product.service";
 import { KnowledgeService } from "@/server/services/knowledge.service";
 import { ConversationService } from "@/server/services/conversation.service";
+import { NotificationService } from "@/server/services/notification.service";
 import { CartService } from "@/server/services/cart.service";
 import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 import { MessageRole, AgentType } from "@/generated/prisma/enums";
@@ -350,22 +351,51 @@ async function executeToolCall(
     case "requestSupervisorApproval": {
       const reason = String(args.reason ?? "Discount request");
       const requestedPercent = Number(args.requestedDiscountPercent ?? 0);
+      let conversationId = args.conversationId
+        ? String(args.conversationId)
+        : null;
 
       // Business rule: supervisors approve max 20% discount
       const maxApproved = 20;
       const approvedPercent = Math.min(requestedPercent, maxApproved);
+
+      if (requestedPercent > maxApproved) {
+        if (!conversationId && sessionId) {
+          const conversation = await ConversationService.getOrCreate(sessionId, userId);
+          conversationId = conversation.id;
+        }
+
+        if (conversationId) {
+          const escalationReason = `Client requested ${requestedPercent}% discount, above allocated ${maxApproved}% policy limit.`;
+          await ConversationService.escalate(conversationId);
+          await ConversationService.addMessage(conversationId, {
+            role: MessageRole.SYSTEM,
+            content: `Escalated to human. Reason: ${escalationReason}`,
+            agentType: AgentType.AI,
+          });
+
+          await NotificationService.notifyAllAdminsEscalation({
+            conversationId,
+            reason: escalationReason,
+            requestedDiscountPercent: requestedPercent,
+            allowedDiscountPercent: maxApproved,
+          });
+        }
+      }
 
       // Small artificial pause — makes it feel like a real supervisor review
       await new Promise<void>((resolve) => setTimeout(resolve, 2500));
 
       const note =
         requestedPercent > maxApproved
-          ? `The requested ${requestedPercent}% was above our policy limit, but ${approvedPercent}% has been approved.`
+          ? `The requested ${requestedPercent}% was above our policy limit, but ${approvedPercent}% has been approved. Your request has been escalated to a human admin for follow-up in chat.`
           : `${approvedPercent}% discount approved.`;
 
       return {
         approved: true,
         approvedDiscountPercent: approvedPercent,
+        handoffRequired: requestedPercent > maxApproved,
+        switchMode: requestedPercent > maxApproved ? "chat" : "voice",
         message: `Supervisor approved a ${approvedPercent}% discount on this order. ${note}`,
         supervisorNote: reason,
       };

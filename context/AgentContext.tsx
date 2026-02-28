@@ -33,6 +33,18 @@ interface ToolCall {
     function: { name: string; arguments: string | Record<string, unknown> };
 }
 
+function parseToolCallArgs(
+    raw: string | Record<string, unknown> | undefined,
+): Record<string, unknown> {
+    if (!raw) return {};
+    if (typeof raw === "object") return raw;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+}
+
 interface VapiMessage {
     type: string;
     role?: string;
@@ -197,6 +209,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const handleClientToolRef = useRef<(vapi: Vapi, call: ToolCall) => Promise<void>>(
         async () => { console.warn("[Crumb] handleClientToolRef called before init"); },
     );
+    const shouldPersistEscalatedStateRef = useRef(false);
 
     const handleMessage = useCallback(
         (msg: VapiMessage) => {
@@ -238,6 +251,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             }
 
             let callList: ToolCall[] = [];
+            const MAX_POLICY_DISCOUNT = 20;
 
             if (msg.type === "tool-calls" && Array.isArray(msg.toolCallList)) {
                 console.log(
@@ -258,6 +272,26 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                     );
                     return isClient;
                 });
+
+                const requiresHumanHandoff = msg.toolCallList.some((toolCall) => {
+                    if (toolCall.function.name !== "requestSupervisorApproval") return false;
+                    const args = parseToolCallArgs(toolCall.function.arguments);
+                    const requested = Number(args.requestedDiscountPercent ?? 0);
+                    return Number.isFinite(requested) && requested > MAX_POLICY_DISCOUNT;
+                });
+
+                if (requiresHumanHandoff && status === "active") {
+                    console.log(
+                        "%c[Crumb:handoff] Over-policy discount request detected. Switching to human chat mode.",
+                        "color:#f59e0b;font-weight:bold",
+                    );
+                    shouldPersistEscalatedStateRef.current = true;
+                    setStatus("escalated");
+                    setIsSidebarOpen(true);
+                    setLiveTranscript(null);
+                    setPendingProposal(null);
+                    vapi.stop();
+                }
             }
 
             if (msg.type === "function-call" && msg.functionCall) {
@@ -516,10 +550,16 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         instance.on("call-end", () => {
             console.log("%c[Crumb:vapi] 🔴 call-end", "color:#f87171;font-weight:bold");
-            setStatus("idle");
+            if (shouldPersistEscalatedStateRef.current) {
+                setStatus("escalated");
+                setIsSidebarOpen(true);
+                shouldPersistEscalatedStateRef.current = false;
+            } else {
+                setStatus("idle");
+                setIsSidebarOpen(false);
+            }
             setIsSpeaking(false);
             setIsMuted(false);
-            setIsSidebarOpen(false);
             setLiveTranscript(null);
             setPendingProposal(null);
             isStartingRef.current = false;
