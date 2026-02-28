@@ -8,7 +8,10 @@
 
 const BASE_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
 
-function buildServerToolUrl(identity?: { userId?: string; sessionId?: string }): string {
+function buildServerToolUrl(identity?: {
+  userId?: string;
+  sessionId?: string;
+}): string {
   const params = new URLSearchParams();
   if (identity?.userId) params.set("userId", identity.userId);
   if (identity?.sessionId) params.set("sessionId", identity.sessionId);
@@ -50,6 +53,12 @@ SUPERVISOR APPROVAL FLOW:
 - Customer asks for a large discount → say "That's beyond what I'm authorised to approve — let me check with my supervisor."
 - Call requestSupervisorApproval with the requested percentage.
 - Relay the supervisor's decision to the customer.
+- After approval is confirmed, ALWAYS call applyDiscount with the approved percentage.
+
+DISCOUNT RULES:
+- You may approve and apply discounts ≤15% directly — call applyDiscount immediately.
+- For discounts >15%, call requestSupervisorApproval first, then call applyDiscount with the approvedDiscountPercent from the response.
+- Never apply a discount without calling applyDiscount — just mentioning it does NOT update the cart.
 
 IMPORTANT:
 - NEVER say items were added/removed unless the tool succeeds.
@@ -62,7 +71,10 @@ export interface VapiIdentity {
   sessionId?: string;
 }
 
-export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdentity) {
+export function buildVapiAssistantConfig(
+  userName?: string,
+  identity?: VapiIdentity,
+) {
   const safeUserName = typeof userName === "string" ? userName.trim() : "";
   const firstName = safeUserName.split(/\s+/).filter(Boolean)[0] ?? "";
   const personalizedSystemPrompt = firstName
@@ -187,7 +199,8 @@ export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdent
               properties: {
                 variantId: {
                   type: "string",
-                  description: "Product variant UUID (from listProducts or getProduct)",
+                  description:
+                    "Product variant UUID (from listProducts or getProduct)",
                 },
                 quantity: {
                   type: "number",
@@ -282,7 +295,32 @@ export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdent
           // No server — client handles it via the Vapi SDK message event
         },
 
-        // requestSupervisorApproval — bakery escalation / discount approval
+        {
+          type: "function" as const,
+          function: {
+            name: "applyDiscount",
+            description:
+              "Apply an approved discount percentage to the customer's cart. Call this AFTER you have authorised a discount (≤15% you can approve directly; >15% requires requestSupervisorApproval first). This updates the cart totals immediately so the customer sees the saving.",
+            parameters: {
+              type: "object",
+              required: ["discountPercent"],
+              properties: {
+                discountPercent: {
+                  type: "number",
+                  description:
+                    "The discount percentage to apply (e.g. 10 for 10%). Must be between 0 and 20.",
+                },
+                reason: {
+                  type: "string",
+                  description:
+                    "Brief reason for the discount (e.g. 'loyalty reward', 'supervisor approved')",
+                },
+              },
+            },
+          },
+          // No server URL — client tool handled by the browser
+        },
+
         {
           type: "function" as const,
           function: {
@@ -396,11 +434,13 @@ export type VapiClientToolName =
   | "navigateTo"
   | "openCartDrawer"
   | "removeFromCart"
-  | "proposeCartUpdate";
+  | "proposeCartUpdate"
+  | "applyDiscount";
 
 export const CLIENT_TOOL_NAMES = new Set<string>([
   "navigateTo",
   "openCartDrawer",
   "removeFromCart",
   "proposeCartUpdate",
+  "applyDiscount",
 ] satisfies VapiClientToolName[]);

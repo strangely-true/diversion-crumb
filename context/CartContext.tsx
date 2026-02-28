@@ -25,6 +25,9 @@ import {
 
 type CartProduct = Pick<Product, "id" | "name" | "price">;
 
+/** Maximum discount the system may ever grant. Matches the server-side policy cap. */
+const MAX_DISCOUNT_PERCENT = 20;
+
 const GUEST_SESSION_STORAGE_KEY = "bakery_guest_session_id";
 
 function getOrCreateGuestSessionId() {
@@ -56,6 +59,8 @@ type CartContextType = {
     cartId: string | null;
     cartItems: CartItem[];
     subtotal: number;
+    discount: number;
+    discountPercent: number;
     tax: number;
     shipping: number;
     total: number;
@@ -71,6 +76,8 @@ type CartContextType = {
     clearCart: () => void;
     removeFromCart: (id: string) => void;
     reloadCart: () => Promise<void>;
+    applyDiscount: (percent: number) => void;
+    clearDiscount: () => void;
 };
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -83,6 +90,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
         return safeParseCartItems(localStorage.getItem(CART_STORAGE_KEY));
     });
+    // Discount is intentionally NOT read from localStorage — it must be server-sourced.
+    // It is rehydrated below from /api/vapi/conversation/approved-discount.
+    const [discountPercent, setDiscountPercent] = useState<number>(0);
     const [toastMessage, setToastMessage] = useState("");
     const [isCartOpen, setIsCartOpen] = useState(false);
     const openCart = useCallback(() => setIsCartOpen(true), []);
@@ -94,6 +104,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
         localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
     }, [cartItems]);
+
+    // On mount, rehydrate the approved discount from the server so localStorage
+    // cannot be tampered with to show a false discount in the UI.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const sessionId = localStorage.getItem("bakery_agent_session");
+        if (!sessionId) return;
+
+        void fetch(`/api/vapi/conversation/approved-discount?sessionId=${encodeURIComponent(sessionId)}`)
+            .then(async (res) => {
+                if (!res.ok) return;
+                const data = await res.json() as { approvedDiscountPercent?: number | null };
+                const raw = data.approvedDiscountPercent;
+                if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+                    // Enforce the server-side policy cap on the client too.
+                    setDiscountPercent(Math.min(MAX_DISCOUNT_PERCENT, raw));
+                }
+            })
+            .catch(() => { /* non-critical — starts at 0 */ });
+    }, []);
+
+    const applyDiscount = useCallback((percent: number) => {
+        if (!Number.isFinite(percent) || percent < 0) return;
+        // Hard cap — never apply more than the policy maximum, regardless of caller.
+        const clamped = Math.min(MAX_DISCOUNT_PERCENT, percent);
+        setDiscountPercent(clamped);
+        if (clamped > 0) setToastMessage(`${clamped}% discount applied to your order!`);
+    }, []);
+
+    const clearDiscount = useCallback(() => {
+        setDiscountPercent(0);
+    }, []);
 
     const reloadCart = useCallback(async () => {
         try {
@@ -234,9 +276,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         [cartItems],
     );
 
-    const { subtotal, tax, shipping, total } = useMemo(
-        () => calculateCartTotals(cartItems),
-        [cartItems],
+    const { subtotal, discount, tax, shipping, total } = useMemo(
+        () => calculateCartTotals(cartItems, discountPercent),
+        [cartItems, discountPercent],
     );
 
     const contextValue = useMemo(
@@ -244,6 +286,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             cartId,
             cartItems,
             subtotal,
+            discount,
+            discountPercent,
             tax,
             shipping,
             total,
@@ -259,11 +303,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             clearCart,
             removeFromCart: removeItem,
             reloadCart,
+            applyDiscount,
+            clearDiscount,
         }),
         [
             cartId,
             cartItems,
             subtotal,
+            discount,
+            discountPercent,
             tax,
             shipping,
             total,
@@ -278,6 +326,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             removeItem,
             clearCart,
             reloadCart,
+            applyDiscount,
+            clearDiscount,
         ],
     );
 

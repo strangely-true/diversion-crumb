@@ -149,7 +149,7 @@ function normalizeNavigationPath(rawPath: unknown): { path: string; blocked: boo
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const { removeItem, reloadCart } = useCart();
+    const { removeItem, reloadCart, applyDiscount } = useCart();
     const { user } = useAuth();
 
     const vapiRef = useRef<Vapi | null>(null);
@@ -433,6 +433,30 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                         result = "Confirmation cards displayed. Ask the customer to confirm or decline.";
                         break;
                     }
+                    case "applyDiscount": {
+                        const percent = Number(args.discountPercent ?? 0);
+                        const reason = String(args.reason ?? "");
+                        // Hard cap enforced here too — defence-in-depth against a jailbroken AI.
+                        const MAX_ALLOWED = 20;
+                        console.log(
+                            `%c[Crumb:exec] applyDiscount → ${percent}%${reason ? ` (${reason})` : ""}`,
+                            "color:#818cf8",
+                        );
+                        if (!Number.isFinite(percent) || percent < 0) {
+                            result = "Invalid discount percentage.";
+                            break;
+                        }
+                        if (percent > MAX_ALLOWED) {
+                            result = `Discount capped at ${MAX_ALLOWED}% by policy. Applying ${MAX_ALLOWED}% instead.`;
+                            applyDiscount(MAX_ALLOWED);
+                            break;
+                        }
+                        applyDiscount(percent);
+                        result = percent > 0
+                            ? `${percent}% discount applied to cart successfully.`
+                            : "Discount cleared from cart.";
+                        break;
+                    }
                     default:
                         console.warn(`%c[Crumb:exec] UNKNOWN client tool: ${name}`, "color:#f87171");
                         result = `Unknown client tool: ${name}`;
@@ -456,7 +480,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
             console.log(`%c[Crumb:exec] vapi.send(tool result) dispatched for ${name}`, "color:#4ade80");
         },
-        [router, removeItem, reloadCart],
+        [router, removeItem, reloadCart, applyDiscount],
     );
 
     // Keep handleClientToolRef current
@@ -813,13 +837,16 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                                 : Date.now(),
                     });
 
+                    // Sync admin-approved discount into CartContext so the cart & checkout show it immediately.
+                    applyDiscount(approvedPercent);
+
                     if (lastDiscountNoticeRef.current !== approvedPercent) {
                         setMessages((prev) => [
                             ...prev,
                             {
                                 id: crypto.randomUUID(),
                                 role: "assistant",
-                                content: `Great news — your ${approvedPercent}% discount is approved and will be applied at checkout.`,
+                                content: `Great news — your ${approvedPercent}% discount has been applied to your cart!`,
                                 timestamp: Date.now(),
                             },
                         ]);
@@ -852,7 +879,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         pollForNewMessages();
         pollPollerRef.current = setInterval(pollForNewMessages, 2500);
-    }, []);
+    }, [applyDiscount]);
 
     const stopEscalationPoller = useCallback(() => {
         if (pollPollerRef.current) {

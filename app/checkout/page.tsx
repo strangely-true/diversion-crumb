@@ -1,46 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
 import CartSummary from "@/components/CartSummary";
 import CheckoutForm from "@/components/CheckoutForm";
 import { useCart } from "@/context/CartContext";
 
 export default function CheckoutPage() {
-    const { subtotal, tax, shipping, total, totalItems, cartId, reloadCart } = useCart();
-    const [approvedDiscountPercent, setApprovedDiscountPercent] = useState<number>(0);
-
-    useEffect(() => {
-        const loadApprovedDiscount = async () => {
-            try {
-                const sessionId = localStorage.getItem("bakery_agent_session");
-                if (!sessionId) return;
-
-                const res = await fetch(`/api/vapi/conversation/approved-discount?sessionId=${encodeURIComponent(sessionId)}`);
-                if (!res.ok) return;
-
-                const data = await res.json() as { approvedDiscountPercent?: number | null };
-                const next = typeof data.approvedDiscountPercent === "number" ? data.approvedDiscountPercent : 0;
-                if (Number.isFinite(next) && next >= 0) {
-                    setApprovedDiscountPercent(next);
-                }
-            } catch {
-                // Keep checkout functional even if approval lookup fails.
-            }
-        };
-
-        void loadApprovedDiscount();
-    }, []);
-
-    const discountAmount = useMemo(
-        () => Number((subtotal * (approvedDiscountPercent / 100)).toFixed(2)),
-        [approvedDiscountPercent, subtotal],
-    );
-
-    const payableTotal = useMemo(
-        () => Number((subtotal + tax + shipping - discountAmount).toFixed(2)),
-        [discountAmount, shipping, subtotal, tax],
-    );
+    const { subtotal, discount, discountPercent, tax, shipping, total, totalItems, cartId, reloadCart } = useCart();
+    // `total` from CartContext already has the discount factored in.
 
     return (
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
@@ -108,14 +75,14 @@ export default function CheckoutPage() {
                     </div>
                 ) : (
                     <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-                        <CheckoutForm amount={payableTotal} cartId={cartId} onCheckoutComplete={reloadCart} />
+                        <CheckoutForm amount={total} cartId={cartId} onCheckoutComplete={reloadCart} />
                         <CartSummary
                             subtotal={subtotal}
                             tax={tax}
                             shipping={shipping}
-                            discount={discountAmount}
-                            discountPercent={approvedDiscountPercent}
-                            total={payableTotal}
+                            discount={discount}
+                            discountPercent={discountPercent > 0 ? discountPercent : undefined}
+                            total={total}
                             ctaLabel="Back to Cart"
                             ctaHref="/cart"
                         />

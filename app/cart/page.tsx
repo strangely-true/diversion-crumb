@@ -9,6 +9,8 @@ export default function CartPage() {
     const {
         cartItems,
         subtotal,
+        discount,
+        discountPercent,
         tax,
         shipping,
         total,
@@ -22,7 +24,7 @@ export default function CartPage() {
         <section className="relative bg-[color:var(--surface-2)] px-6 py-16">
             {/* Decorative blob */}
             <div className="absolute left-0 top-0 h-96 w-96 rounded-full bg-[color:var(--accent)] opacity-5 blur-3xl" />
-            
+
             <div className="relative mx-auto max-w-7xl space-y-10">
                 <div>
                     <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[color:var(--accent)]/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--accent)]">
@@ -84,6 +86,8 @@ export default function CartPage() {
                             subtotal={subtotal}
                             tax={tax}
                             shipping={shipping}
+                            discount={discount}
+                            discountPercent={discountPercent > 0 ? discountPercent : undefined}
                             total={total}
                         />
                     </div>

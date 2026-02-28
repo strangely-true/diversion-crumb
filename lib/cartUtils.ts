@@ -43,13 +43,16 @@ export function safeParseCartItems(raw: string | null): CartItem[] {
   }
 }
 
-export function calculateCartTotals(items: CartItem[]) {
+export function calculateCartTotals(items: CartItem[], discountPercent = 0) {
   const subtotal = roundToTwo(
     items.reduce((sum, item) => sum + item.price * item.quantity, 0),
   );
-  const tax = roundToTwo(subtotal * 0.08);
+  const discount =
+    discountPercent > 0 ? roundToTwo(subtotal * (discountPercent / 100)) : 0;
+  const taxableAmount = roundToTwo(subtotal - discount);
+  const tax = roundToTwo(taxableAmount * 0.08);
   const shipping = subtotal === 0 ? 0 : subtotal >= 50 ? 0 : 5;
-  const total = roundToTwo(subtotal + tax + shipping);
+  const total = roundToTwo(taxableAmount + tax + shipping);
 
-  return { subtotal, tax, shipping, total };
+  return { subtotal, discount, tax, shipping, total };
 }
