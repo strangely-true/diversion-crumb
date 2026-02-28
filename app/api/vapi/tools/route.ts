@@ -41,15 +41,60 @@ interface VapiToolCallsPayload {
     type: string;
     toolCallList?: ToolCall[];
     toolWithToolCallList?: Array<{
-      id: string;
-      type: string;
-      function: { name: string; arguments: string };
+      id?: string;
+      type?: string;
+      toolCall: ToolCall;
     }>;
   };
   call?: { id?: string };
 }
 
+type NormalizedToolCall = {
+  toolCallId: string;
+  name?: string;
+  argumentsJson?: string;
+  error?: string;
+};
+
+function normalizeToolCalls(payload: VapiToolCallsPayload): NormalizedToolCall[] {
+  const directList = payload.message?.toolCallList ?? [];
+  const nestedList = (payload.message?.toolWithToolCallList ?? []).map(
+    (item) => item.toolCall,
+  );
+
+  const combined = [...directList, ...nestedList];
+
+  return combined.map((call, index) => {
+    const fallbackId = `missing-id-${index + 1}`;
+    const toolCallId = String(call?.id ?? fallbackId);
+    const name = call?.function?.name;
+    const argumentsJson = call?.function?.arguments;
+
+    if (!call?.id) {
+      return {
+        toolCallId,
+        error: "Malformed tool call: missing id",
+      };
+    }
+
+    if (!name) {
+      return {
+        toolCallId,
+        error: "Malformed tool call: missing function.name",
+      };
+    }
+
+    return {
+      toolCallId,
+      name,
+      argumentsJson,
+    };
+  });
+}
+
 export async function POST(req: NextRequest) {
+  let rawBody: unknown;
+
   try {
     // Optional secret verification
     if (WEBHOOK_SECRET) {
@@ -59,11 +104,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const body: VapiToolCallsPayload = await req.json();
+    rawBody = await req.json();
+    console.log("[vapi/tools] incoming payload:", JSON.stringify(rawBody, null, 2));
+
+    const body = rawBody as VapiToolCallsPayload;
 
     // Normalise both payload shapes Vapi may send
-    const toolCalls: ToolCall[] =
-      body.message?.toolCallList ?? body.message?.toolWithToolCallList ?? [];
+    const toolCalls = normalizeToolCalls(body);
 
     if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
       return NextResponse.json({ results: [] });
@@ -71,10 +118,18 @@ export async function POST(req: NextRequest) {
 
     const results = await Promise.all(
       toolCalls.map(async (call) => {
-        const name = call.function.name;
+        if (call.error || !call.name) {
+          return {
+            toolCallId: call.toolCallId,
+            result: JSON.stringify({
+              error: call.error ?? "Malformed tool call",
+            }),
+          };
+        }
+
         let args: Record<string, unknown> = {};
         try {
-          args = JSON.parse(call.function.arguments);
+          args = JSON.parse(call.argumentsJson ?? "{}");
         } catch {
           // empty args
         }
@@ -82,14 +137,14 @@ export async function POST(req: NextRequest) {
         let result: unknown;
 
         try {
-          result = await executeToolCall(name, args);
+          result = await executeToolCall(call.name, args);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Tool call failed";
           result = { error: msg };
         }
 
         return {
-          toolCallId: call.id,
+          toolCallId: call.toolCallId,
           result: typeof result === "string" ? result : JSON.stringify(result),
         };
       }),
@@ -97,6 +152,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (err) {
+    if (rawBody) {
+      console.log("[vapi/tools] payload on error:", JSON.stringify(rawBody, null, 2));
+    }
     console.error("[vapi/tools] error:", err);
     return NextResponse.json(
       { error: "Internal server error" },

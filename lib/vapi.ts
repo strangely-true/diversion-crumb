@@ -6,7 +6,7 @@
  *  - Client tools  → no server URL         (Vapi fires SDK "message" event; browser handles them)
  */
 
-const SERVER_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
+const SERVER_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 export const BAKERY_SYSTEM_PROMPT = `You are Crumb, the friendly and knowledgeable voice assistant for Crumbs & Co. You speak naturally, warmly, and concisely — you are a voice assistant, so keep responses short and conversational.
 
@@ -69,7 +69,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: `${SERVER_URL}/api/vapi/tools` },
         },
 
         {
@@ -89,7 +89,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: `${SERVER_URL}/api/vapi/tools` },
         },
 
         {
@@ -109,7 +109,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: `${SERVER_URL}/api/vapi/tools` },
         },
 
         {
@@ -133,7 +133,7 @@ export function buildVapiAssistantConfig() {
               },
             },
           },
-          server: { url: SERVER_TOOL_URL },
+          server: { url: `${SERVER_URL}/api/vapi/tools` },
         },
 
         // ────────────────────────────────────────────────────────────────────
