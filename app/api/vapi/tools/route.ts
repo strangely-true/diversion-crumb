@@ -33,7 +33,8 @@ interface ToolCall {
   type: string;
   function: {
     name: string;
-    arguments: string; // JSON string
+    // VAPI may send arguments as a JSON string OR a pre-parsed object
+    arguments: string | Record<string, unknown>;
   };
 }
 
@@ -41,13 +42,15 @@ interface VapiToolCallsPayload {
   message: {
     type: string;
     toolCallList?: ToolCall[];
-    toolWithToolCallList?: Array<{
-      id: string;
-      type: string;
-      function: { name: string; arguments: string };
-    }>;
   };
   call?: { id?: string };
+}
+
+/** Safely extract args regardless of whether VAPI sent a string or object. */
+function parseToolArgs(raw: string | Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 export async function POST(req: NextRequest) {
@@ -61,10 +64,9 @@ export async function POST(req: NextRequest) {
     }
 
     const body: VapiToolCallsPayload = await req.json();
+    const vapiCallId = body.call?.id;
 
-    // Normalise both payload shapes Vapi may send
-    const toolCalls: ToolCall[] =
-      body.message?.toolCallList ?? body.message?.toolWithToolCallList ?? [];
+    const toolCalls: ToolCall[] = body.message?.toolCallList ?? [];
 
     if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
       return NextResponse.json({ results: [] });
@@ -73,17 +75,12 @@ export async function POST(req: NextRequest) {
     const results = await Promise.all(
       toolCalls.map(async (call) => {
         const name = call.function.name;
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(call.function.arguments);
-        } catch {
-          // empty args
-        }
+        const args = parseToolArgs(call.function.arguments);
 
         let result: unknown;
 
         try {
-          result = await executeToolCall(name, args);
+          result = await executeToolCall(name, args, vapiCallId);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Tool call failed";
           result = { error: msg };
@@ -111,67 +108,117 @@ export async function POST(req: NextRequest) {
 async function executeToolCall(
   name: string,
   args: Record<string, unknown>,
+  vapiCallId?: string,
 ): Promise<unknown> {
+  // Voice-session cart identity: use VAPI call ID as a guest session
+  const cartSessionId = vapiCallId ? `vapi_${vapiCallId}` : undefined;
+
   switch (name) {
     // ── addToCart ───────────────────────────────────────────────────────────
     case "addToCart": {
-      const userId = String(args.userId ?? "").trim();
       const variantId = String(args.variantId ?? "").trim();
-      const quantity = Number(args.quantity);
+      const quantity = Number(args.quantity ?? 1);
 
-      if (!userId || !variantId) {
-        return { error: "Missing required fields" };
+      if (!variantId) {
+        return { error: "variantId is required" };
       }
-
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return { error: "Invalid quantity" };
       }
+      if (!cartSessionId) {
+        return { error: "No session — cannot identify cart" };
+      }
 
       try {
-        return await CartService.addItem(userId, variantId, quantity);
+        const cart = await CartService.addItem(undefined, {
+          sessionId: cartSessionId,
+          currency: "USD",
+          variantId,
+          quantity,
+        });
+        return {
+          success: true,
+          totalItems: cart.summary.itemCount,
+          subtotal: cart.summary.subtotal,
+        };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool call failed";
-        if (message === "Variant not found") {
-          return { error: "Variant not found" };
-        }
         return { error: message };
       }
     }
 
     // ── updateCartItemQuantity ──────────────────────────────────────────────
     case "updateCartItemQuantity": {
-      const userId = String(args.userId ?? "").trim();
       const variantId = String(args.variantId ?? "").trim();
-      const quantity = Number(args.quantity);
+      const quantity = Number(args.quantity ?? 0);
 
-      if (!userId || !variantId) {
-        return { error: "Missing required fields" };
+      if (!variantId) {
+        return { error: "variantId is required" };
       }
-
       if (!Number.isInteger(quantity) || quantity < 0) {
         return { error: "Invalid quantity" };
       }
+      if (!cartSessionId) {
+        return { error: "No session — cannot identify cart" };
+      }
 
       try {
-        return await CartService.updateQuantity(userId, variantId, quantity);
+        const cart = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        const existing = cart.items.find((i) => i.variantId === variantId);
+
+        if (!existing && quantity > 0) {
+          const added = await CartService.addItem(undefined, {
+            sessionId: cartSessionId,
+            currency: "USD",
+            variantId,
+            quantity,
+          });
+          return {
+            success: true,
+            totalItems: added.summary.itemCount,
+            subtotal: added.summary.subtotal,
+          };
+        }
+
+        if (existing) {
+          await CartService.updateItemQuantity(undefined, existing.id, {
+            quantity,
+            sessionId: cartSessionId,
+          });
+        }
+
+        const updated = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        return {
+          success: true,
+          totalItems: updated.summary.itemCount,
+          subtotal: updated.summary.subtotal,
+        };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool call failed";
-        if (message === "Variant not found") {
-          return { error: "Variant not found" };
-        }
         return { error: message };
       }
     }
 
     // ── getCart ──────────────────────────────────────────────────────────────
     case "getCart": {
-      const userId = String(args.userId ?? "").trim();
-      if (!userId) {
-        return { error: "Missing required fields" };
+      if (!cartSessionId) {
+        return { error: "No session — cannot identify cart" };
       }
 
       try {
-        return await CartService.getCart(userId);
+        const cart = await CartService.getOrCreateActiveCart(undefined, cartSessionId, "USD");
+        const items = cart.items.map((i) => ({
+          name: i.variant.product.name,
+          variant: i.variant.label,
+          quantity: i.quantity,
+          unitPrice: Number(i.variant.price),
+          lineTotal: Number(i.variant.price) * i.quantity,
+        }));
+        return {
+          totalItems: cart.summary.itemCount,
+          subtotal: cart.summary.subtotal,
+          items,
+        };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool call failed";
         return { error: message };

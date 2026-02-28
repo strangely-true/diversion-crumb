@@ -156,22 +156,18 @@ export function buildVapiAssistantConfig() {
           function: {
             name: "addToCart",
             description:
-              "Add a specific variant to a user's cart using deterministic backend arithmetic.",
+              "Add a product variant to the customer's cart. The server identifies the cart automatically from the voice session.",
             parameters: {
               type: "object",
-              required: ["userId", "variantId", "quantity"],
+              required: ["variantId"],
               properties: {
-                userId: {
-                  type: "string",
-                  description: "Authenticated user ID",
-                },
                 variantId: {
                   type: "string",
-                  description: "Product variant UUID",
+                  description: "Product variant UUID (from listProducts or getProduct)",
                 },
                 quantity: {
                   type: "number",
-                  description: "Quantity to add; must be greater than 0",
+                  description: "Quantity to add (default 1)",
                 },
               },
             },
@@ -184,15 +180,11 @@ export function buildVapiAssistantConfig() {
           function: {
             name: "updateCartItemQuantity",
             description:
-              "Set cart quantity for a variant. quantity=0 removes the item.",
+              "Set cart quantity for a variant. quantity=0 removes the item. The server identifies the cart automatically.",
             parameters: {
               type: "object",
-              required: ["userId", "variantId", "quantity"],
+              required: ["variantId", "quantity"],
               properties: {
-                userId: {
-                  type: "string",
-                  description: "Authenticated user ID",
-                },
                 variantId: {
                   type: "string",
                   description: "Product variant UUID",
@@ -212,16 +204,11 @@ export function buildVapiAssistantConfig() {
           type: "function" as const,
           function: {
             name: "getCart",
-            description: "Get a user's full deterministic cart summary.",
+            description:
+              "Get the customer's current cart summary. The server identifies the cart automatically from the voice session.",
             parameters: {
               type: "object",
-              required: ["userId"],
-              properties: {
-                userId: {
-                  type: "string",
-                  description: "Authenticated user ID",
-                },
-              },
+              properties: {},
             },
           },
           server: { url: SERVER_TOOL_URL },
