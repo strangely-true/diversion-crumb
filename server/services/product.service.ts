@@ -173,9 +173,6 @@ export class ProductService {
           tags: input.tags,
           heroImage: input.heroImage,
           categoryId: input.categoryId,
-          images: {
-            create: input.images,
-          },
           variants: {
             create: input.variants.map((variant) => ({
               sku: variant.sku,
@@ -194,6 +191,17 @@ export class ProductService {
           images: true,
         },
       });
+
+      if (input.images.length > 0) {
+        await db.productImage.createMany({
+          data: input.images.map((image) => ({
+            productId: product.id,
+            url: image.url,
+            altText: image.altText,
+            sortOrder: image.sortOrder,
+          })),
+        });
+      }
 
       for (const variant of input.variants) {
         const createdVariant = product.variants.find(
@@ -236,6 +244,9 @@ export class ProductService {
           },
         },
       });
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
 
     revalidateTag(PRODUCTS_TAG, "default");
@@ -333,7 +344,7 @@ export class ProductService {
       );
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const db = tx as typeof prisma;
 
       const updated = await db.inventoryLevel.update({
@@ -356,5 +367,8 @@ export class ProductService {
 
       return updated;
     });
+
+    revalidateTag(PRODUCTS_TAG, "default");
+    return result;
   }
 }

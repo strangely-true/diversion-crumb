@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
+      { protocol: "https", hostname: "unsplash.com", pathname: "/**" },
+      { protocol: "https", hostname: "www.unsplash.com", pathname: "/**" },
+      { protocol: "https", hostname: "source.unsplash.com", pathname: "/**" },
       // Auth0 user pictures (Gravatar + Google + generic Auth0 CDN)
       { protocol: "https", hostname: "s.gravatar.com", pathname: "/**" },
       { protocol: "https", hostname: "*.gravatar.com", pathname: "/**" },

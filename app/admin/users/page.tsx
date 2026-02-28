@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireAdmin } from "@/server/auth/auth";
+import { AppError } from "@/server/errors/app-error";
 import { AdminService } from "@/server/services/admin.service";
+import AdminDeleteUserDialog from "@/components/admin/AdminDeleteUserDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +31,32 @@ async function updateUserRoleAction(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function deleteUserAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdmin();
+  const userId = String(formData.get("userId") ?? "").trim();
+
+  if (!userId || userId === session.userId) {
+    return;
+  }
+
+  try {
+    await AdminService.deleteUser(userId, session.userId);
+  } catch (error) {
+    if (error instanceof AppError) {
+      return;
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+}
+
 export default async function AdminUsersPage() {
+  const session = await requireAdmin();
   const users = await AdminService.getUsers();
 
   return (
@@ -54,7 +81,7 @@ export default async function AdminUsersPage() {
                 <TableHead>Orders</TableHead>
                 <TableHead>Conversations</TableHead>
                 <TableHead>Joined</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -69,20 +96,28 @@ export default async function AdminUsersPage() {
                   <TableCell>{user._count.conversations}</TableCell>
                   <TableCell>{formatDate(user.createdAt)}</TableCell>
                   <TableCell>
-                    <form action={updateUserRoleAction} className="flex items-center gap-2">
-                      <input type="hidden" name="userId" value={user.id} />
-                      <select
-                        name="role"
-                        defaultValue={user.role}
-                        className="border-input h-9 rounded-md border bg-transparent px-2 text-sm"
-                      >
-                        <option value={UserRole.CUSTOMER}>CUSTOMER</option>
-                        <option value={UserRole.ADMIN}>ADMIN</option>
-                      </select>
-                      <Button type="submit" size="sm" variant="outline">
-                        Update
-                      </Button>
-                    </form>
+                    <div className="flex items-center gap-2">
+                      <form action={updateUserRoleAction} className="flex items-center gap-2">
+                        <input type="hidden" name="userId" value={user.id} />
+                        <select
+                          name="role"
+                          defaultValue={user.role}
+                          className="border-input h-9 rounded-md border bg-transparent px-2 text-sm"
+                        >
+                          <option value={UserRole.CUSTOMER}>CUSTOMER</option>
+                          <option value={UserRole.ADMIN}>ADMIN</option>
+                        </select>
+                        <Button type="submit" size="sm" variant="outline">
+                          Update
+                        </Button>
+                      </form>
+                      <AdminDeleteUserDialog
+                        action={deleteUserAction}
+                        userId={user.id}
+                        userEmail={user.email}
+                        disabled={user.id === session.userId}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
