@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { createOrderFromCart, processMockPayment } from "@/lib/api/checkout";
 import { ApiError } from "@/lib/api/client";
+import { useAgent } from "@/context/AgentContext";
 
 type CheckoutFormProps = {
     amount: number;
@@ -13,6 +14,7 @@ type CheckoutFormProps = {
 export default function CheckoutForm({ amount, cartId, onCheckoutComplete }: CheckoutFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState("");
+    const { endCall, closeSidebar } = useAgent();
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -34,9 +36,14 @@ export default function CheckoutForm({ amount, cartId, onCheckoutComplete }: Che
             const city = String(formData.get("city") ?? "").trim();
             const postalCode = String(formData.get("postalCode") ?? "").trim();
             const country = String(formData.get("country") ?? "").trim();
+            const agentSessionId =
+                typeof window !== "undefined"
+                    ? localStorage.getItem("bakery_agent_session") ?? undefined
+                    : undefined;
 
             const order = await createOrderFromCart({
                 cartId,
+                agentSessionId,
                 shippingAddress: {
                     fullName: `${firstName} ${lastName}`.trim(),
                     phone,
@@ -49,11 +56,14 @@ export default function CheckoutForm({ amount, cartId, onCheckoutComplete }: Che
 
             const payment = await processMockPayment({
                 orderId: order.id,
+                amount: Number(order.total),
                 method: "CARD",
                 forceResult: "success",
             });
 
             await onCheckoutComplete();
+            endCall();
+            closeSidebar();
             setMessage(`Order ${order.id} created. Payment ${payment.paymentResult}.`);
         } catch (error) {
             const fallback = "Checkout failed. Please try again.";

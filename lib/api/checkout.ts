@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api/client";
 
 export async function createOrderFromCart(input: {
   cartId: string;
+  agentSessionId?: string;
   shippingAddress: {
     fullName: string;
     phone?: string;

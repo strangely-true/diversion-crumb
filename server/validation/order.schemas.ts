@@ -14,6 +14,7 @@ const orderAddressSchema = z.object({
 
 export const createOrderSchema = z.object({
   cartId: z.uuid(),
+  agentSessionId: z.string().trim().optional(),
   shippingAddress: orderAddressSchema,
   billingAddress: orderAddressSchema.optional(),
   notes: z.string().trim().optional(),

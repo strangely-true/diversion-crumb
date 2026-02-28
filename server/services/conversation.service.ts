@@ -39,6 +39,17 @@ export class ConversationService {
     });
   }
 
+  static async getBySessionId(sessionId: string) {
+    return prisma.conversation.findUnique({
+      where: { sessionId },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } },
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
   static async getMany(filters: {
     status?: ConversationStatus;
     assignedToId?: string;

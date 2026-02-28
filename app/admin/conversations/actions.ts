@@ -188,3 +188,45 @@ export async function sendAdminReplyAction(formData: FormData) {
     console.error("[admin/conversations] sendAdminReplyAction", error);
   }
 }
+
+export async function approveDiscountAction(formData: FormData) {
+  try {
+    const session = await requireAdmin();
+    const conversationId = String(formData.get("conversationId") ?? "").trim();
+    const approvedDiscountPercent = Number(formData.get("approvedDiscountPercent") ?? 0);
+
+    if (!conversationId || approvedDiscountPercent < 0 || approvedDiscountPercent > 100) {
+      return;
+    }
+
+    const conversation = await ConversationService.getById(conversationId);
+    if (!conversation) return;
+
+    const currentMetadata = asRecord(conversation.metadata) ?? {};
+
+    await ConversationService.patch(conversationId, {
+      metadata: {
+        ...currentMetadata,
+        approvedDiscountPercent,
+        discountApprovedAt: new Date().toISOString(),
+        discountApprovedBy: session.email,
+      },
+    });
+
+    // Optionally log approval as a system message
+    await ConversationService.addMessage(conversationId, {
+      role: MessageRole.SYSTEM,
+      content: `Admin ${session.email} approved ${approvedDiscountPercent}% discount for this order.`,
+      agentType: AgentType.HUMAN,
+      metadata: {
+        approvalType: "discount",
+        approvedPercent: approvedDiscountPercent,
+        approvedBy: session.userId,
+      },
+    });
+
+    revalidatePath("/admin/conversations");
+  } catch (error) {
+    console.error("[admin/conversations] approveDiscountAction", error);
+  }
+}

@@ -13,6 +13,7 @@ import {
   sendAdminReplyAction,
   summarizeConversationAction,
   takeOverConversationAction,
+  approveDiscountAction,
 } from "./actions";
 
 const insightsSchema = z.object({
@@ -173,7 +174,7 @@ export default async function AdminConversationsPage() {
                 })()}
 
                 {conversation.status === ConversationStatus.ESCALATED && (
-                  <div className="bg-muted/30 rounded-md border p-2 text-sm">
+                  <div className="bg-muted/30 rounded-md border p-2 text-sm space-y-2">
                     <p className="font-medium">Escalation notice</p>
                     <p className="text-muted-foreground text-xs">
                       {getEscalationReason(conversation.messages) ??
@@ -194,6 +195,49 @@ export default async function AdminConversationsPage() {
                         </form>
                       )}
                     </div>
+
+                    {(() => {
+                      const metadata =
+                        typeof conversation.metadata === "object" ? conversation.metadata as Record<string, unknown> : {};
+                      const approvedPercent = metadata.approvedDiscountPercent;
+                      return (
+                        <div className="bg-yellow-500/10 border-yellow-200 mt-3 rounded border p-2">
+                          <p className="text-xs font-medium mb-2">Discount Approval</p>
+                          {typeof approvedPercent === "number" ? (
+                            <div className="space-y-2">
+                              <p className="text-xs text-yellow-800">
+                                ✓ Approved: <strong>{approvedPercent}%</strong> discount
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Approved by: {String(metadata.discountApprovedBy ?? "Admin")}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-yellow-800 mb-2">
+                              No discount approved yet. Set approval percentage below.
+                            </p>
+                          )}
+                          <form action={approveDiscountAction} className="flex gap-2 items-center mt-2">
+                            <input type="hidden" name="conversationId" value={conversation.id} />
+                            <input
+                              type="number"
+                              name="approvedDiscountPercent"
+                              min="0"
+                              max="100"
+                              step="5"
+                              className="w-16 h-8 border rounded px-2 py-1 text-xs"
+                              placeholder="0"
+                              defaultValue={typeof approvedPercent === "number" ? String(approvedPercent) : ""}
+                              required
+                            />
+                            <span className="text-xs">%</span>
+                            <Button type="submit" size="sm" variant="outline" className="text-xs">
+                              {typeof approvedPercent === "number" ? "Update" : "Set"} Discount
+                            </Button>
+                          </form>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

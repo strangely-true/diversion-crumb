@@ -80,6 +80,12 @@ export type CartProposal = {
     items: CartProposalItem[];
 };
 
+export type ApprovedDiscount = {
+    percent: number;
+    conversationId: string;
+    approvedAt: number;
+};
+
 interface AgentContextValue {
     status: AgentStatus;
     isSpeaking: boolean;
@@ -90,6 +96,8 @@ interface AgentContextValue {
     liveTranscript: { role: "user" | "assistant"; content: string } | null;
     /** Cart update proposal waiting for customer Yes / No */
     pendingProposal: CartProposal | null;
+    /** Approved discount from admin (only in escalated conversations) */
+    approvedDiscount: ApprovedDiscount | null;
     conversationId: string | null;
     isSidebarOpen: boolean;
     startCall: (userName?: string, options?: { force?: boolean }) => Promise<void>;
@@ -156,6 +164,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const [conversationId, setConversationId] = useState<string | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
+    const [approvedDiscount, setApprovedDiscount] = useState<ApprovedDiscount | null>(null);
 
     const pendingUserMessageRef = useRef<string | null>(null);
     const pendingMicrophoneDeviceIdRef = useRef("");
@@ -733,10 +742,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
             if (status === "escalated") {
                 appendUserMessage();
-                pendingUserMessageRef.current = message;
-                shouldPersistEscalatedStateRef.current = false;
-                enableTextOnlyResponse();
-                await startCall(undefined, { force: true });
+                const sid = sessionIdRef.current;
+                if (sid) {
+                    void fetch("/api/vapi/conversation/human-message", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ sessionId: sid, content: message }),
+                    }).catch((err) => console.error("[escalated-send] error:", err));
+                }
                 return;
             }
 
@@ -756,6 +769,73 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         },
         [isMuted, scheduleMessageSave, status, startCall],
     );
+
+    // ── Polling for escalated mode ─────────────────────────────────────────────
+    const pollPollerRef = useRef<NodeJS.Timeout | null>(null);
+    const lastPolledMessageCountRef = useRef(0);
+
+    const startEscalationPoller = useCallback(() => {
+        if (pollPollerRef.current) clearInterval(pollPollerRef.current);
+        lastPolledMessageCountRef.current = messages.length;
+
+        const pollForNewMessages = async () => {
+            const sid = sessionIdRef.current;
+            if (!sid) return;
+
+            try {
+                const res = await fetch(`/api/vapi/conversation?sessionId=${encodeURIComponent(sid)}`);
+                if (!res.ok) return;
+
+                const updatedConversation = await res.json() as {
+                    messages?: Array<{ id?: string; role: string; content: string; createdAt: string | Date }>;
+                };
+                const backendMessages = updatedConversation.messages ?? [];
+
+                if (backendMessages.length > lastPolledMessageCountRef.current) {
+                    const newBackendMessages = backendMessages.slice(lastPolledMessageCountRef.current);
+                    const newChatMessages: ChatMessage[] = newBackendMessages
+                        .filter((msg) => msg.role !== "USER")
+                        .map((msg) => ({
+                            id: msg.id ?? crypto.randomUUID(),
+                            role: (msg.role === "ASSISTANT" ? "assistant" : "user") as "user" | "assistant",
+                            content: msg.content,
+                            timestamp: new Date(msg.createdAt).getTime(),
+                        }));
+
+                    if (newChatMessages.length > 0) {
+                        setMessages((prev) => [...prev, ...newChatMessages]);
+                        lastPolledMessageCountRef.current = backendMessages.length;
+                    }
+                }
+            } catch (err) {
+                console.log("[escalation-poller] error:", err);
+            }
+        };
+
+        pollForNewMessages();
+        pollPollerRef.current = setInterval(pollForNewMessages, 2500);
+    }, [messages.length]);
+
+    const stopEscalationPoller = useCallback(() => {
+        if (pollPollerRef.current) {
+            clearInterval(pollPollerRef.current);
+            pollPollerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        if (status === "escalated") {
+            startEscalationPoller();
+        } else {
+            stopEscalationPoller();
+        }
+
+        return () => {
+            if (status === "escalated") stopEscalationPoller();
+        };
+    }, [status, startEscalationPoller, stopEscalationPoller]);
+
+    // ── End polling ───────────────────────────────────────────────────────────────
 
     const setMicrophoneDevice = useCallback(async (deviceId: string) => {
         const nextDeviceId = deviceId.trim();
@@ -815,6 +895,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 messages,
                 liveTranscript,
                 pendingProposal,
+                approvedDiscount,
                 conversationId,
                 isSidebarOpen,
                 startCall,
@@ -840,3 +921,5 @@ export function useAgent() {
     if (!ctx) throw new Error("useAgent must be used within AgentProvider");
     return ctx;
 }
+
+
