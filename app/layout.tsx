@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
+import { Geist_Mono, Playfair_Display, Source_Sans_3 } from "next/font/google";
 import { CartProvider } from "@/context/CartContext";
+import ThemeInitializer from "@/components/ThemeInitializer";
+import LayoutContent from "./LayoutContent";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const playfairDisplay = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+});
+
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
   subsets: ["latin"],
 });
 
@@ -36,14 +41,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white text-[#333333]`}
+        className={`${sourceSans.variable} ${playfairDisplay.variable} ${geistMono.variable} antialiased bg-[color:var(--bg)] text-[color:var(--text-primary)]`}
       >
+        <ThemeInitializer />
         <CartProvider>
-          <div className="min-h-screen bg-white">
-            <Header />
-            <main className="pt-20">{children}</main>
-            <Footer />
-          </div>
+          <LayoutContent>{children}</LayoutContent>
         </CartProvider>
       </body>
     </html>

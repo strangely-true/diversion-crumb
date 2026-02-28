@@ -2,16 +2,133 @@
 @import "tw-animate-css";
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-muted: #fff6ea;
+    --surface-1: #ffffff;
+    --surface-2: #fff7ee;
+    --surface-3: #fff1e1;
+    --text-primary: #2f241d;
+    --text-muted: #6a5343;
+    --text-strong: #3a2f27;
+    --border: #f3e3cf;
+    --border-strong: #e7b98a;
+    --accent: #f9c88a;
+    --accent-strong: #e6a964;
+    --accent-contrast: #3a2f27;
+    --pill: #ffd7a1;
+    --shadow-soft: 0 12px 30px rgba(58, 47, 39, 0.08);
+    --shadow-strong: 0 22px 50px rgba(58, 47, 39, 0.16);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #1d1714;
+    --bg-muted: #241b17;
+    --surface-1: #241a16;
+    --surface-2: #2b1f1b;
+    --surface-3: #2f221d;
+    --text-primary: #f6ede6;
+    --text-muted: #d4c1b4;
+    --text-strong: #f7efe8;
+    --border: #3c2c25;
+    --border-strong: #5b3f2e;
+    --accent: #f0b878;
+    --accent-strong: #e2a05c;
+    --accent-contrast: #2a1d16;
+    --pill: #c98b4d;
+    --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.4);
+    --shadow-strong: 0 22px 50px rgba(0, 0, 0, 0.55);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      color-scheme: dark;
+      --bg: #1d1714;
+      --bg-muted: #241b17;
+      --surface-1: #241a16;
+      --surface-2: #2b1f1b;
+      --surface-3: #2f221d;
+      --text-primary: #f6ede6;
+      --text-muted: #d4c1b4;
+      --text-strong: #f7efe8;
+      --border: #3c2c25;
+      --border-strong: #5b3f2e;
+      --accent: #f0b878;
+      --accent-strong: #e2a05c;
+      --accent-contrast: #2a1d16;
+      --pill: #c98b4d;
+      --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.4);
+      --shadow-strong: 0 22px 50px rgba(0, 0, 0, 0.55);
+    }
+  }
+
   * {
-    @apply border-[#f3e3cf];
+    @apply border-[color:var(--border)];
   }
   body {
-    @apply bg-white text-[#333333];
+    @apply text-[color:var(--text-primary)];
+    background: radial-gradient(circle at top, var(--bg-muted) 0%, var(--bg) 55%);
+    background-attachment: fixed;
+    font-family: var(--font-source-sans), "Segoe UI", sans-serif;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4a574' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.02em;
+    font-family: var(--font-playfair), "Times New Roman", serif;
+    font-weight: 700;
+  }
+
+  h1 {
+    @apply text-5xl lg:text-6xl;
+  }
+
+  h2 {
+    @apply text-3xl lg:text-4xl;
+  }
+
+  .logo-mark {
+    height: auto;
+  }
+
+  :root[data-theme="dark"] .logo-mark {
+    filter: brightness(0) invert(1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .logo-mark {
+      filter: brightness(0) invert(1);
+    }
   }
 
   input,
   select,
   textarea {
-    @apply rounded-lg border border-[#f3e3cf] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#FFD580];
+    @apply rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-1)] px-3 py-2 text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--accent)];
+  }
+}
+
+@layer utilities {
+  @keyframes floaty {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
   }
 }
