@@ -56,6 +56,9 @@ type CartContextType = {
     total: number;
     totalItems: number;
     toastMessage: string;
+    isCartOpen: boolean;
+    openCart: () => void;
+    closeCart: () => void;
     addToCart: (product: CartProduct) => void;
     increaseQuantity: (id: string) => void;
     decreaseQuantity: (id: string) => void;
@@ -76,6 +79,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return safeParseCartItems(localStorage.getItem(CART_STORAGE_KEY));
     });
     const [toastMessage, setToastMessage] = useState("");
+    const [isCartOpen, setIsCartOpen] = useState(false);
+    const openCart = useCallback(() => setIsCartOpen(true), []);
+    const closeCart = useCallback(() => setIsCartOpen(false), []);
 
     useEffect(() => {
         if (typeof window === "undefined") {
@@ -233,6 +239,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             total,
             totalItems,
             toastMessage,
+            isCartOpen,
+            openCart,
+            closeCart,
             addToCart,
             increaseQuantity,
             decreaseQuantity,
@@ -250,6 +259,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             total,
             totalItems,
             toastMessage,
+            isCartOpen,
+            openCart,
+            closeCart,
             addToCart,
             increaseQuantity,
             decreaseQuantity,

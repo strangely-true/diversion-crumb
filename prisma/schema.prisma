@@ -72,6 +72,25 @@ enum InventoryReason {
   MANUAL
 }
 
+enum ConversationStatus {
+  OPEN
+  ESCALATED
+  RESOLVED
+  ABANDONED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+enum AgentType {
+  AI
+  HUMAN
+}
+
 model User {
   id        String   @id // Auth0 subject (e.g. "auth0|abc123")
   email     String   @unique
@@ -86,6 +105,8 @@ model User {
   orders                Order[]
   inventoryTransactions InventoryTransaction[] @relation("InventoryCreatedBy")
   orderStatusEvents     OrderStatusEvent[]      @relation("OrderStatusCreatedBy")
+  conversations         Conversation[]          @relation("ConversationUser")
+  assignedConversations Conversation[]          @relation("AssignedAgent")
 }
 
 model Address {
@@ -128,6 +149,11 @@ model Product {
   status      ProductStatus  @default(DRAFT)
   tags        String[]       @default([])
   heroImage   String?
+  // Nutrition info
+  servingSize         String?            // e.g. "1 slice (85g)"
+  ingredients         String?            // comma-separated or free text
+  allergens           String[]           @default([]) // ["gluten","dairy","eggs","nuts"]
+  nutritionPerServing Json?              // { calories, fat, carbs, protein, fiber, sodium } per serving
   category    ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   categoryId  String?
   variants    ProductVariant[]
@@ -358,4 +384,52 @@ model ShipmentEvent {
   occurredAt  DateTime       @default(now())
 
   @@index([shipmentId])
+}
+
+// ── Agent / Support system ──────────────────────────────────────────────────
+
+model KnowledgeEntry {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   // plain text; used for full-text search
+  category  String?  // "faq" | "policy" | "product" | "allergy" | ...
+  tags      String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+model Conversation {
+  id           String             @id @default(uuid())
+  sessionId    String             @unique // browser session / Vapi call ID
+  status       ConversationStatus @default(OPEN)
+  agentType    AgentType          @default(AI)
+  user         User?              @relation("ConversationUser", fields: [userId], references: [id], onDelete: SetNull)
+  userId       String?
+  assignedTo   User?              @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedToId String?
+  metadata     Json?              // { vapiCallId, cartId, currentPage, ... }
+  messages     ConversationMessage[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ConversationMessage {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  role           MessageRole
+  content        String
+  agentType      AgentType    @default(AI)
+  metadata       Json?        // { toolName, toolArgs, toolResult, vapiMessageId, ... }
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([createdAt])
 }

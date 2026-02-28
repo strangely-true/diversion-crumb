@@ -1,0 +1,31 @@
+import { NextRequest, NextResponse } from "next/server";
+import { ConversationService } from "@/server/services/conversation.service";
+import { getOptionalSession } from "@/server/auth/auth";
+
+/** POST /api/vapi/conversation  – create or get a conversation by sessionId */
+export async function POST(req: NextRequest) {
+  try {
+    const { sessionId } = (await req.json()) as { sessionId?: string };
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "sessionId required" },
+        { status: 400 },
+      );
+    }
+
+    const session = await getOptionalSession();
+    const userId = session?.userId ?? undefined;
+
+    const conversation = await ConversationService.getOrCreate(
+      sessionId,
+      userId,
+    );
+    return NextResponse.json(conversation);
+  } catch (err) {
+    console.error("[vapi/conversation]", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
