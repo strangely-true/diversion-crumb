@@ -772,11 +772,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
     // ── Polling for escalated mode ─────────────────────────────────────────────
     const pollPollerRef = useRef<NodeJS.Timeout | null>(null);
-    const lastPolledMessageCountRef = useRef(0);
+    const seenEscalatedMessagesRef = useRef<Set<string>>(new Set());
+    const lastDiscountNoticeRef = useRef<number | null>(null);
 
     const startEscalationPoller = useCallback(() => {
         if (pollPollerRef.current) clearInterval(pollPollerRef.current);
-        lastPolledMessageCountRef.current = messages.length;
 
         const pollForNewMessages = async () => {
             const sid = sessionIdRef.current;
@@ -787,25 +787,63 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 if (!res.ok) return;
 
                 const updatedConversation = await res.json() as {
+                    id?: string;
+                    metadata?: unknown;
                     messages?: Array<{ id?: string; role: string; content: string; createdAt: string | Date }>;
                 };
                 const backendMessages = updatedConversation.messages ?? [];
 
-                if (backendMessages.length > lastPolledMessageCountRef.current) {
-                    const newBackendMessages = backendMessages.slice(lastPolledMessageCountRef.current);
-                    const newChatMessages: ChatMessage[] = newBackendMessages
-                        .filter((msg) => msg.role !== "USER")
-                        .map((msg) => ({
-                            id: msg.id ?? crypto.randomUUID(),
-                            role: (msg.role === "ASSISTANT" ? "assistant" : "user") as "user" | "assistant",
-                            content: msg.content,
-                            timestamp: new Date(msg.createdAt).getTime(),
-                        }));
+                const metadata =
+                    updatedConversation.metadata && typeof updatedConversation.metadata === "object"
+                        ? (updatedConversation.metadata as Record<string, unknown>)
+                        : {};
 
-                    if (newChatMessages.length > 0) {
-                        setMessages((prev) => [...prev, ...newChatMessages]);
-                        lastPolledMessageCountRef.current = backendMessages.length;
+                const approvedPercent =
+                    typeof metadata.approvedDiscountPercent === "number"
+                        ? Number(metadata.approvedDiscountPercent)
+                        : null;
+
+                if (approvedPercent !== null && Number.isFinite(approvedPercent)) {
+                    setApprovedDiscount({
+                        percent: approvedPercent,
+                        conversationId: String(updatedConversation.id ?? ""),
+                        approvedAt:
+                            typeof metadata.discountApprovedAt === "string"
+                                ? new Date(metadata.discountApprovedAt).getTime()
+                                : Date.now(),
+                    });
+
+                    if (lastDiscountNoticeRef.current !== approvedPercent) {
+                        setMessages((prev) => [
+                            ...prev,
+                            {
+                                id: crypto.randomUUID(),
+                                role: "assistant",
+                                content: `Great news — your ${approvedPercent}% discount is approved and will be applied at checkout.`,
+                                timestamp: Date.now(),
+                            },
+                        ]);
+                        lastDiscountNoticeRef.current = approvedPercent;
                     }
+                }
+
+                const newChatMessages: ChatMessage[] = backendMessages
+                    .filter((msg) => msg.role !== "USER")
+                    .filter((msg) => {
+                        const key = msg.id ?? `${msg.role}:${msg.createdAt}:${msg.content}`;
+                        if (seenEscalatedMessagesRef.current.has(key)) return false;
+                        seenEscalatedMessagesRef.current.add(key);
+                        return true;
+                    })
+                    .map((msg) => ({
+                        id: msg.id ?? crypto.randomUUID(),
+                        role: "assistant",
+                        content: msg.content,
+                        timestamp: new Date(msg.createdAt).getTime(),
+                    }));
+
+                if (newChatMessages.length > 0) {
+                    setMessages((prev) => [...prev, ...newChatMessages]);
                 }
             } catch (err) {
                 console.log("[escalation-poller] error:", err);
@@ -814,7 +852,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         pollForNewMessages();
         pollPollerRef.current = setInterval(pollForNewMessages, 2500);
-    }, [messages.length]);
+    }, []);
 
     const stopEscalationPoller = useCallback(() => {
         if (pollPollerRef.current) {
