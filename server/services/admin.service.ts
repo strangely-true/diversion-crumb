@@ -2,6 +2,7 @@ import { InventoryReason, ProductStatus, UserRole } from "@/generated/prisma/enu
 import { prisma } from "@/server/prisma/client";
 import { AppError } from "@/server/errors/app-error";
 import { ProductService } from "@/server/services/product.service";
+import { ConversationService } from "@/server/services/conversation.service";
 
 type CreateQuickProductInput = {
   name: string;
@@ -272,6 +273,8 @@ export class AdminService {
   }
 
   static async getConversations() {
+    await ConversationService.purgeResolvedOlderThanDays(5);
+
     return prisma.conversation.findMany({
       include: {
         user: {

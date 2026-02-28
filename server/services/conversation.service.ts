@@ -6,6 +6,18 @@ import {
 import { prisma } from "@/server/prisma/client";
 
 export class ConversationService {
+  static async purgeResolvedOlderThanDays(days = 5) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    return prisma.conversation.deleteMany({
+      where: {
+        status: ConversationStatus.RESOLVED,
+        updatedAt: { lt: cutoff },
+      },
+    });
+  }
+
   /** Get an existing conversation by sessionId, or create a new one. */
   static async getOrCreate(sessionId: string, userId?: string) {
     return prisma.conversation.upsert({
@@ -19,6 +31,17 @@ export class ConversationService {
   static async getById(id: string) {
     return prisma.conversation.findUnique({
       where: { id },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } },
+        user: { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
+  static async getBySessionId(sessionId: string) {
+    return prisma.conversation.findUnique({
+      where: { sessionId },
       include: {
         messages: { orderBy: { createdAt: "asc" } },
         user: { select: { id: true, name: true, email: true } },
@@ -105,6 +128,19 @@ export class ConversationService {
     return prisma.conversation.update({
       where: { id: conversationId },
       data: { status: ConversationStatus.RESOLVED },
+    });
+  }
+
+  static async close(conversationId: string) {
+    return prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: ConversationStatus.RESOLVED },
+    });
+  }
+
+  static async delete(conversationId: string) {
+    return prisma.conversation.delete({
+      where: { id: conversationId },
     });
   }
 

@@ -1,12 +1,36 @@
 import { revalidatePath } from "next/cache";
-import { AgentType, ConversationStatus, MessageRole } from "@/generated/prisma/enums";
+import { z } from "zod";
+import { ConversationStatus, MessageRole } from "@/generated/prisma/enums";
 import { requireAdmin } from "@/server/auth/auth";
 import { AdminService } from "@/server/services/admin.service";
-import { ConversationService } from "@/server/services/conversation.service";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  closeConversationAction,
+  deleteConversationAction,
+  sendAdminReplyAction,
+  summarizeConversationAction,
+  takeOverConversationAction,
+  approveDiscountAction,
+} from "./actions";
+
+const insightsSchema = z.object({
+  summary: z.string().trim().min(20).max(1200),
+  suggestedReplies: z.array(z.string().trim().min(8).max(220)).min(3).max(4),
+});
+
+type ConversationInsight = {
+  summary: string;
+  suggestedReplies: string[];
+  generatedAt: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
 
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("en-US", {
@@ -28,51 +52,25 @@ function getEscalationReason(messages: Array<{ role: string; content: string }>)
   return escalationMessage.content.replace("Escalated to human. Reason:", "").trim();
 }
 
-async function takeOverConversationAction(formData: FormData) {
-  "use server";
+function getConversationInsight(metadata: unknown): ConversationInsight | null {
+  const root = asRecord(metadata);
+  if (!root) return null;
 
-  const session = await requireAdmin();
-  const conversationId = String(formData.get("conversationId") ?? "").trim();
+  const insight = asRecord(root.aiInsight);
+  if (!insight) return null;
 
-  if (!conversationId) return;
-
-  await ConversationService.patch(conversationId, {
-    status: ConversationStatus.OPEN,
-    assignedToId: session.userId,
-    metadata: { takeoverAt: new Date().toISOString(), takeoverBy: session.email },
+  const parsed = insightsSchema.safeParse({
+    summary: insight.summary,
+    suggestedReplies: insight.suggestedReplies,
   });
 
-  await ConversationService.addMessage(conversationId, {
-    role: MessageRole.SYSTEM,
-    content: `Admin ${session.email} took over this conversation.`,
-    agentType: AgentType.HUMAN,
-  });
+  if (!parsed.success) return null;
 
-  revalidatePath("/admin/conversations");
-}
-
-async function sendAdminReplyAction(formData: FormData) {
-  "use server";
-
-  const session = await requireAdmin();
-  const conversationId = String(formData.get("conversationId") ?? "").trim();
-  const content = String(formData.get("content") ?? "").trim();
-
-  if (!conversationId || !content) return;
-
-  await ConversationService.patch(conversationId, {
-    status: ConversationStatus.OPEN,
-    assignedToId: session.userId,
-  });
-
-  await ConversationService.addMessage(conversationId, {
-    role: MessageRole.ASSISTANT,
-    content,
-    agentType: AgentType.HUMAN,
-    metadata: { sentByAdminId: session.userId, sentByAdminEmail: session.email },
-  });
-
-  revalidatePath("/admin/conversations");
+  return {
+    summary: parsed.data.summary,
+    suggestedReplies: parsed.data.suggestedReplies,
+    generatedAt: typeof insight.generatedAt === "string" ? insight.generatedAt : "",
+  };
 }
 
 export default async function AdminConversationsPage() {
@@ -119,8 +117,64 @@ export default async function AdminConversationsPage() {
                 <span className="text-muted-foreground">Updated {formatDate(conversation.updatedAt)}</span>
               </summary>
               <div className="mt-3 space-y-2">
+                {(() => {
+                  const insight = getConversationInsight(conversation.metadata);
+                  return (
+                    <div className="bg-muted/20 rounded-md border p-3 text-sm">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">AI Chat Summary</p>
+                        <div className="flex flex-wrap gap-2">
+                          <form action={summarizeConversationAction}>
+                            <input type="hidden" name="conversationId" value={conversation.id} />
+                            <Button type="submit" size="sm" variant="outline">
+                              {insight ? "Refresh Summary" : "Generate Summary"}
+                            </Button>
+                          </form>
+
+                          {conversation.status !== ConversationStatus.RESOLVED && (
+                            <form action={closeConversationAction}>
+                              <input type="hidden" name="conversationId" value={conversation.id} />
+                              <Button type="submit" size="sm" variant="secondary">
+                                Close Conversation
+                              </Button>
+                            </form>
+                          )}
+
+                          <form action={deleteConversationAction}>
+                            <input type="hidden" name="conversationId" value={conversation.id} />
+                            <Button type="submit" size="sm" variant="destructive">
+                              Delete
+                            </Button>
+                          </form>
+                        </div>
+                      </div>
+
+                      {insight ? (
+                        <div className="space-y-2">
+                          <p className="text-muted-foreground text-xs">
+                            Generated {insight.generatedAt ? formatDate(new Date(insight.generatedAt)) : "just now"}
+                          </p>
+                          <p>{insight.summary}</p>
+                          <div>
+                            <p className="mb-1 text-xs font-medium">Suggested answers</p>
+                            <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-xs">
+                              {insight.suggestedReplies.map((reply) => (
+                                <li key={reply}>{reply}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-xs">
+                          No AI summary yet. Generate one to get a concise chat overview and suggested replies.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {conversation.status === ConversationStatus.ESCALATED && (
-                  <div className="bg-muted/30 rounded-md border p-2 text-sm">
+                  <div className="bg-muted/30 rounded-md border p-2 text-sm space-y-2">
                     <p className="font-medium">Escalation notice</p>
                     <p className="text-muted-foreground text-xs">
                       {getEscalationReason(conversation.messages) ??
@@ -141,22 +195,74 @@ export default async function AdminConversationsPage() {
                         </form>
                       )}
                     </div>
+
+                    {(() => {
+                      const metadata =
+                        typeof conversation.metadata === "object" ? conversation.metadata as Record<string, unknown> : {};
+                      const approvedPercent = metadata.approvedDiscountPercent;
+                      return (
+                        <div className="bg-yellow-500/10 border-yellow-200 mt-3 rounded border p-2">
+                          <p className="text-xs font-medium mb-2">Discount Approval</p>
+                          {typeof approvedPercent === "number" ? (
+                            <div className="space-y-2">
+                              <p className="text-xs text-yellow-800">
+                                ✓ Approved: <strong>{approvedPercent}%</strong> discount
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Approved by: {String(metadata.discountApprovedBy ?? "Admin")}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-yellow-800 mb-2">
+                              No discount approved yet. Set approval percentage below.
+                            </p>
+                          )}
+                          <form action={approveDiscountAction} className="flex gap-2 items-center mt-2">
+                            <input type="hidden" name="conversationId" value={conversation.id} />
+                            <input
+                              type="number"
+                              name="approvedDiscountPercent"
+                              min="0"
+                              max="100"
+                              step="5"
+                              className="w-16 h-8 border rounded px-2 py-1 text-xs"
+                              placeholder="0"
+                              defaultValue={typeof approvedPercent === "number" ? String(approvedPercent) : ""}
+                              required
+                            />
+                            <span className="text-xs">%</span>
+                            <Button type="submit" size="sm" variant="outline" className="text-xs">
+                              {typeof approvedPercent === "number" ? "Update" : "Set"} Discount
+                            </Button>
+                          </form>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
                 {conversation.messages.length === 0 ? (
                   <p className="text-muted-foreground text-sm">No messages.</p>
                 ) : (
-                  conversation.messages.map((message) => (
-                    <div key={message.id} className="bg-muted/40 rounded-md px-3 py-2 text-sm">
-                      <div className="mb-1 flex items-center gap-2">
-                        <Badge variant="secondary">{message.role}</Badge>
-                        <Badge variant="outline">{message.agentType}</Badge>
-                        <span className="text-muted-foreground text-xs">{formatDate(message.createdAt)}</span>
-                      </div>
-                      <p>{message.content}</p>
+                  <div className="space-y-2">
+                    {conversation.messages.length > 40 && (
+                      <p className="text-muted-foreground text-xs">
+                        Showing latest 40 of {conversation.messages.length} messages.
+                      </p>
+                    )}
+                    <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+                      {conversation.messages.slice(-40).map((message) => (
+                        <div key={message.id} className="bg-muted/40 rounded-md px-3 py-2 text-sm">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Badge variant="secondary">{message.role}</Badge>
+                            <Badge variant="outline">{message.agentType}</Badge>
+                            <span className="text-muted-foreground text-xs">{formatDate(message.createdAt)}</span>
+                          </div>
+                          <p>{message.content}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))
+                  </div>
                 )}
 
                 <form action={sendAdminReplyAction} className="mt-3 flex flex-col gap-2">

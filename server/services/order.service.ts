@@ -1,6 +1,7 @@
 import {
   CartStatus,
   InventoryReason,
+  MessageRole,
   OrderStatus,
   PaymentStatus,
   ShipmentStatus,
@@ -22,6 +23,20 @@ function createOrderNumber() {
 
 function asMoney(value: number) {
   return Number(value.toFixed(2));
+}
+
+function clampDiscountPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Number(value)));
+}
+
+function parseDiscountPercentFromText(content: string) {
+  if (!/(approve|approved|approval|discount)/i.test(content)) return null;
+  const match = content.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed)) return null;
+  return clampDiscountPercent(parsed);
 }
 
 export class OrderService {
@@ -74,7 +89,75 @@ export class OrderService {
     );
     const tax = asMoney(subtotal * 0.08);
     const shippingFee = subtotal >= 50 ? 0 : 5;
-    const discountTotal = 0;
+    let appliedDiscountPercent = 0;
+
+    if (input.agentSessionId) {
+      const conversation = await prisma.conversation.findUnique({
+        where: { sessionId: input.agentSessionId },
+        include: {
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 40,
+          },
+        },
+      });
+
+      if (conversation) {
+        const metadata =
+          conversation.metadata && typeof conversation.metadata === "object"
+            ? (conversation.metadata as Record<string, unknown>)
+            : {};
+
+        const metadataPercent =
+          typeof metadata.approvedDiscountPercent === "number"
+            ? clampDiscountPercent(metadata.approvedDiscountPercent)
+            : null;
+
+        const latestAdminApprovalPercent = conversation.messages.find((message) => {
+          if (message.role !== MessageRole.ASSISTANT) return false;
+
+          const meta =
+            message.metadata && typeof message.metadata === "object"
+              ? (message.metadata as Record<string, unknown>)
+              : {};
+
+          if (meta.approvalType === "discount" && typeof meta.approvedPercent === "number") {
+            return true;
+          }
+
+          return parseDiscountPercentFromText(message.content) !== null;
+        });
+
+        let resolvedFromMessage: number | null = null;
+        if (latestAdminApprovalPercent) {
+          const msgMeta =
+            latestAdminApprovalPercent.metadata && typeof latestAdminApprovalPercent.metadata === "object"
+              ? (latestAdminApprovalPercent.metadata as Record<string, unknown>)
+              : {};
+
+          if (msgMeta.approvalType === "discount" && typeof msgMeta.approvedPercent === "number") {
+            resolvedFromMessage = clampDiscountPercent(msgMeta.approvedPercent);
+          } else {
+            resolvedFromMessage = parseDiscountPercentFromText(latestAdminApprovalPercent.content);
+          }
+        }
+
+        const hasDiscountEscalation = conversation.messages.some(
+          (message) =>
+            message.role === MessageRole.SYSTEM &&
+            /escalated to human/i.test(message.content) &&
+            /discount/i.test(message.content),
+        );
+
+        const DEFAULT_ALLOCATED_PERCENT = 20;
+        appliedDiscountPercent =
+          metadataPercent ??
+          resolvedFromMessage ??
+          (hasDiscountEscalation ? DEFAULT_ALLOCATED_PERCENT : 0);
+      }
+    }
+
+    const discountTotal = asMoney(subtotal * (appliedDiscountPercent / 100));
     const total = asMoney(subtotal + tax + shippingFee - discountTotal);
 
     return prisma.$transaction(async (tx) => {
@@ -87,6 +170,11 @@ export class OrderService {
       const billingAddress = await db.orderAddress.create({
         data: input.billingAddress ?? input.shippingAddress,
       });
+
+      const discountNote =
+        appliedDiscountPercent > 0
+          ? `Discount applied: ${appliedDiscountPercent}% ($${discountTotal.toFixed(2)}).`
+          : null;
 
       const order = await db.order.create({
         data: {
@@ -102,7 +190,7 @@ export class OrderService {
           discountTotal,
           total,
           currency: cart.currency,
-          notes: input.notes,
+          notes: [input.notes?.trim(), discountNote].filter(Boolean).join(" ") || undefined,
           shippingAddressId: shippingAddress.id,
           billingAddressId: billingAddress.id,
           items: {
