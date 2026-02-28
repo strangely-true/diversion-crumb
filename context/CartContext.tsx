@@ -45,6 +45,7 @@ function getOrCreateGuestSessionId() {
 function mapBackendCartItems(cart: BackendCartResponse): CartItem[] {
     return cart.items.map((item) => ({
         id: item.id,
+        variantId: item.variantId,
         name: `${item.variant.product.name} (${item.variant.label})`,
         price: Number(item.unitPrice),
         quantity: item.quantity,
@@ -134,7 +135,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                         : item,
                 );
             }
-            return [...prev, { id: product.id, name: product.name, price: product.price, quantity: 1 }];
+            return [...prev, { id: product.id, variantId: product.id, name: product.name, price: product.price, quantity: 1 }];
         });
         setToastMessage(`${product.name} added to cart`);
 
