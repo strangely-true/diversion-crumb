@@ -14,7 +14,16 @@ import { buildVapiAssistantConfig, CLIENT_TOOL_NAMES } from "@/lib/vapi";
 import { removeCartItem } from "@/lib/api/cart";
 import { useCart } from "@/context/CartContext";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// NOTE: This file was rewritten to:
+//  1. Fix the stale-closure bug in Vapi event listeners (ref-based handler)
+//  2. Track a full ChatMessage[] history instead of a single transcript string
+//  3. Expose liveTranscript (partial speech) for the UI
+//  4. Support the proposeCartUpdate   client tool (pendingProposal state)
+//  5. Async / fire-and-forget message persistence (debounced 2 s)
+// ────────────────────────────────────────────────────────────────────────────
+
+// ── Internal types ─────────────────────────────────────────────────────────────
 
 interface ToolCall {
     id: string;
@@ -32,19 +41,49 @@ interface VapiMessage {
     functionCall?: { name: string; parameters: Record<string, unknown>; id?: string };
 }
 
+// ── Exported types (used by AgentWidget) ──────────────────────────────────────
+
 export type AgentStatus = "idle" | "connecting" | "active" | "escalated";
+
+export type ChatMessage = {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    timestamp: number;
+};
+
+export type CartProposalItem = {
+    variantId?: string;
+    name: string;
+    price: number;
+    imageUrl?: string;
+    action?: "add" | "remove" | "replace";
+};
+
+export type CartProposal = {
+    toolCallId: string;
+    message: string;
+    items: CartProposalItem[];
+};
 
 interface AgentContextValue {
     status: AgentStatus;
     isSpeaking: boolean;
     isMuted: boolean;
-    transcript: string;
+    /** Full transcript history for the current call */
+    messages: ChatMessage[];
+    /** Partial (live) speech currently being spoken */
+    liveTranscript: { role: "user" | "assistant"; content: string } | null;
+    /** Cart update proposal waiting for customer Yes / No */
+    pendingProposal: CartProposal | null;
     conversationId: string | null;
     isSidebarOpen: boolean;
     startCall: () => Promise<void>;
     endCall: () => void;
     toggleMute: () => void;
     sendTextMessage: (text: string) => Promise<void>;
+    approveProposal: () => void;
+    rejectProposal: () => void;
     selectedMicrophoneId: string;
     setMicrophoneDevice: (deviceId: string) => Promise<void>;
     openSidebar: () => void;
@@ -64,15 +103,25 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
     const vapiRef = useRef<Vapi | null>(null);
     const isStartingRef = useRef(false);
+
     const [status, setStatus] = useState<AgentStatus>("idle");
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [transcript, setTranscript] = useState("");
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [liveTranscript, setLiveTranscript] = useState<{ role: "user" | "assistant"; content: string } | null>(null);
+    const [pendingProposal, setPendingProposal] = useState<CartProposal | null>(null);
     const [conversationId, setConversationId] = useState<string | null>(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [selectedMicrophoneId, setSelectedMicrophoneId] = useState("");
+
     const pendingUserMessageRef = useRef<string | null>(null);
     const pendingMicrophoneDeviceIdRef = useRef("");
+
+    // Always-current session ID used for fire-and-forget message saves
+    const sessionIdRef = useRef<string | null>(null);
+    // Batch of messages queued for async persistence
+    const pendingSaveRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([]);
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         try {
@@ -84,6 +133,164 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         } catch {
             // ignore storage access issues
         }
+    }, []);
+
+    // ── Async message save (fire-and-forget, debounced 2 s) ───────────────────
+    const flushMessageSave = useCallback(() => {
+        const batch = [...pendingSaveRef.current];
+        pendingSaveRef.current = [];
+        const sid = sessionIdRef.current;
+        if (!sid || batch.length === 0) return;
+        void fetch("/api/vapi/conversation/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: sid, messages: batch }),
+        }).catch(() => { /* non-critical */ });
+    }, []);
+
+    const scheduleMessageSave = useCallback(
+        (msg: { role: "user" | "assistant"; content: string }) => {
+            pendingSaveRef.current.push(msg);
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(flushMessageSave, 2000);
+        },
+        [flushMessageSave],
+    );
+
+    // ── THE MESSAGE HANDLER — stored in a ref so it's always fresh ────────────
+    // Calling `onMessageRef.current(msg)` in the Vapi listener avoids the
+    // stale-closure problem (Vapi attaches the listener once at init time).
+    const onMessageRef = useRef<(msg: VapiMessage) => void>(() => { });
+
+    const handleMessage = useCallback(
+        (msg: VapiMessage) => {
+            // ── Live transcripts ──────────────────────────────────────────────
+            if (msg.type === "transcript") {
+                const role = (msg.role ?? "assistant") as "user" | "assistant";
+                const content = msg.transcript ?? "";
+                if (msg.transcriptType === "partial") {
+                    setLiveTranscript({ role, content });
+                } else if (msg.transcriptType === "final" && content.trim()) {
+                    setLiveTranscript(null);
+                    const newMsg: ChatMessage = {
+                        id: crypto.randomUUID(),
+                        role,
+                        content,
+                        timestamp: Date.now(),
+                    };
+                    setMessages((prev) => [...prev, newMsg]);
+                    scheduleMessageSave({ role, content });
+                }
+                return;
+            }
+
+            // ── Client-side tool calls ────────────────────────────────────────
+            const vapi = vapiRef.current;
+            if (!vapi) return;
+
+            const callList: ToolCall[] =
+                msg.type === "tool-calls" && Array.isArray(msg.toolCallList)
+                    ? msg.toolCallList.filter((c) => CLIENT_TOOL_NAMES.has(c.function.name))
+                    : [];
+
+            if (msg.type === "function-call" && msg.functionCall) {
+                const { name, parameters, id } = msg.functionCall;
+                if (CLIENT_TOOL_NAMES.has(name)) {
+                    callList.push({
+                        id: id ?? crypto.randomUUID(),
+                        type: "function",
+                        function: { name, arguments: JSON.stringify(parameters) },
+                    });
+                }
+            }
+
+            for (const call of callList) {
+                void handleClientTool(vapi, call);
+            }
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [scheduleMessageSave],
+    );
+
+    // Keep the ref current — no stale closures in Vapi listeners
+    useEffect(() => {
+        onMessageRef.current = handleMessage;
+    }, [handleMessage]);
+
+    // ── Execute one client tool and return result to Vapi ─────────────────────
+    const handleClientTool = useCallback(
+        async (vapi: Vapi, call: ToolCall) => {
+            const { name } = call.function;
+            let args: Record<string, unknown> = {};
+            try { args = JSON.parse(call.function.arguments); } catch { /* ignore */ }
+
+            let result = "done";
+
+            try {
+                switch (name) {
+                    case "navigateTo": {
+                        const path = String(args.path ?? "/");
+                        router.push(path);
+                        result = `Navigated to ${path}`;
+                        break;
+                    }
+                    case "openCartDrawer": {
+                        openCart();
+                        result = "Cart drawer opened";
+                        break;
+                    }
+                    case "removeFromCart": {
+                        const cartItemId = String(args.cartItemId ?? "");
+                        const sid = (() => {
+                            try { return localStorage.getItem("bakery_guest_session_id") ?? undefined; } catch { return undefined; }
+                        })();
+                        await removeCartItem(cartItemId, sid);
+                        await reloadCart();
+                        removeItem(cartItemId);
+                        result = "Removed item from cart";
+                        break;
+                    }
+                    case "proposeCartUpdate": {
+                        const items = (args.items as CartProposalItem[] | undefined) ?? [];
+                        const message = String(args.message ?? "Do you want me to update your cart?");
+                        setPendingProposal({ toolCallId: call.id, message, items });
+                        setIsSidebarOpen(true);
+                        result = "Confirmation cards displayed. Ask the customer to confirm or decline.";
+                        break;
+                    }
+                    default:
+                        result = `Unknown client tool: ${name}`;
+                }
+            } catch (err) {
+                result = `Error: ${err instanceof Error ? err.message : "Tool failed"}`;
+            }
+
+            vapi.send({
+                type: "add-message",
+                message: { role: "tool" as const, tool_call_id: call.id, content: result },
+                triggerResponseEnabled: true,
+            });
+        },
+        [router, openCart, removeItem, reloadCart],
+    );
+
+    // ── Proposal accept / reject ──────────────────────────────────────────────
+    const approveProposal = useCallback(() => {
+        setPendingProposal(null);
+        vapiRef.current?.send({
+            type: "add-message",
+            message: { role: "user" as const, content: "Yes, please make those changes to my cart." },
+            triggerResponseEnabled: true,
+        });
+    }, []);
+
+    const rejectProposal = useCallback(() => {
+        setPendingProposal(null);
+        vapiRef.current?.send({
+            type: "add-message",
+            message: { role: "user" as const, content: "No, keep my cart as it is." },
+            triggerResponseEnabled: true,
+        });
     }, []);
 
     const isMeetingEndedEjection = useCallback((value: unknown) => {
@@ -112,24 +319,22 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY ?? "";
         const instance = new VapiSDK(publicKey);
 
-        // ── Event handlers ───────────────────────────────────────────────────────
         instance.on("call-start", () => {
             setStatus("active");
-            setTranscript("");
+            setMessages([]);
+            setLiveTranscript(null);
+            setPendingProposal(null);
+            setIsSidebarOpen(true);
 
             if (pendingMicrophoneDeviceIdRef.current) {
-                void instance.setInputDevicesAsync({
-                    audioSource: pendingMicrophoneDeviceIdRef.current,
-                });
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                void instance.setInputDevicesAsync({ audioSource: pendingMicrophoneDeviceIdRef.current as any });
             }
 
             if (pendingUserMessageRef.current) {
                 instance.send({
                     type: "add-message",
-                    message: {
-                        role: "user" as const,
-                        content: pendingUserMessageRef.current,
-                    },
+                    message: { role: "user" as const, content: pendingUserMessageRef.current },
                     triggerResponseEnabled: true,
                 });
                 pendingUserMessageRef.current = null;
@@ -141,35 +346,20 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             setIsSpeaking(false);
             setIsMuted(false);
             setIsSidebarOpen(false);
+            setLiveTranscript(null);
+            setPendingProposal(null);
             isStartingRef.current = false;
+            // Flush any unsaved messages immediately on call end
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            flushMessageSave();
         });
 
         instance.on("speech-start", () => setIsSpeaking(true));
         instance.on("speech-end", () => setIsSpeaking(false));
 
-        instance.on("message", (msg: VapiMessage) => {
-            // Live transcript
-            if (msg.type === "transcript" && msg.transcriptType === "final") {
-                setTranscript(msg.transcript ?? "");
-            }
-
-            // Client-side tool calls ─ handle tools that have no serverUrl
-            if (msg.type === "tool-calls" && Array.isArray(msg.toolCallList)) {
-                void handleToolCalls(instance, msg.toolCallList);
-            }
-
-            // Legacy function-call shape (older Vapi SDK versions)
-            if (msg.type === "function-call" && msg.functionCall) {
-                const { name, parameters, id } = msg.functionCall;
-                if (CLIENT_TOOL_NAMES.has(name)) {
-                    void handleSingleClientTool(instance, {
-                        id: id ?? crypto.randomUUID(),
-                        type: "function",
-                        function: { name, arguments: JSON.stringify(parameters) },
-                    });
-                }
-            }
-        });
+        // Delegate to the ref — always calls the current (fresh) handler
+        // This is the fix for the stale-closure bug.
+        instance.on("message", (msg: VapiMessage) => onMessageRef.current(msg));
 
         instance.on("error", (err) => {
             if (isMeetingEndedEjection(err)) {
@@ -180,7 +370,6 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 isStartingRef.current = false;
                 return;
             }
-
             console.error("[Vapi error]", err);
             setStatus("idle");
             isStartingRef.current = false;
@@ -188,91 +377,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         vapiRef.current = instance;
         return instance;
-    }, []);
-
-    // ── Handle multiple client-tool calls ────────────────────────────────────────
-    const handleToolCalls = useCallback(
-        async (vapi: Vapi, calls: ToolCall[]) => {
-            const clientCalls = calls.filter((c) => CLIENT_TOOL_NAMES.has(c.function.name));
-
-            for (const call of clientCalls) {
-                await handleSingleClientTool(vapi, call);
-            }
-        },
-        /* eslint-disable-next-line react-hooks/exhaustive-deps */
-        [],
-    );
-
-    // ── Execute one client tool and return result to Vapi ────────────────────────
-    const handleSingleClientTool = useCallback(
-        async (vapi: Vapi, call: ToolCall) => {
-            const { name } = call.function;
-            let args: Record<string, unknown> = {};
-            try {
-                args = JSON.parse(call.function.arguments);
-            } catch {
-                // ignore parse errors
-            }
-
-            let result = "done";
-
-            try {
-                switch (name) {
-                    // ──────────────────────────────────────────────────────────────────
-                    case "navigateTo": {
-                        const path = String(args.path ?? "/");
-                        router.push(path);
-                        result = `Navigated to ${path}`;
-                        break;
-                    }
-
-                    // ──────────────────────────────────────────────────────────────────
-                    case "openCartDrawer": {
-                        openCart();
-                        result = "Cart drawer opened";
-                        break;
-                    }
-
-                    // ──────────────────────────────────────────────────────────────────
-                    case "removeFromCart": {
-                        const cartItemId = String(args.cartItemId ?? "");
-                        const sessionId = (() => {
-                            try {
-                                return localStorage.getItem("bakery_guest_session_id") ?? undefined;
-                            } catch {
-                                return undefined;
-                            }
-                        })();
-
-                        await removeCartItem(cartItemId, sessionId);
-                        await reloadCart();
-                        removeItem(cartItemId);
-
-                        result = `Removed item from cart`;
-                        break;
-                    }
-
-                    default:
-                        result = `Unknown client tool: ${name}`;
-                }
-            } catch (err) {
-                const msg = err instanceof Error ? err.message : "Tool failed";
-                result = `Error: ${msg}`;
-            }
-
-            // Send tool result back to Vapi so the AI can respond
-            vapi.send({
-                type: "add-message",
-                message: {
-                    role: "tool" as const,
-                    tool_call_id: call.id,
-                    content: result,
-                },
-                triggerResponseEnabled: true,
-            });
-        },
-        [router, openCart, removeItem, reloadCart],
-    );
+    }, [isMeetingEndedEjection, flushMessageSave]);
 
     // ── Start call ────────────────────────────────────────────────────────────────
     const startCall = useCallback(async () => {
@@ -310,16 +415,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             })();
 
             setConversationId(sessionId);
+            sessionIdRef.current = sessionId;
 
-            try {
-                await fetch("/api/vapi/conversation", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sessionId }),
-                });
-            } catch {
-                // non-critical
-            }
+            // Fire-and-forget — does not block the call
+            void fetch("/api/vapi/conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId }),
+            }).catch(() => { /* non-critical */ });
         } catch (err) {
             if (!isMeetingEndedEjection(err)) {
                 console.error("[startCall] error:", err);
@@ -375,9 +478,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         if (!vapiRef.current || status !== "active" || !nextDeviceId) return;
 
         try {
-            await vapiRef.current.setInputDevicesAsync({
-                audioSource: nextDeviceId,
-            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await vapiRef.current.setInputDevicesAsync({ audioSource: nextDeviceId as any });
         } catch (err) {
             console.error("[setMicrophoneDevice] error:", err);
         }
@@ -416,13 +518,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 status,
                 isSpeaking,
                 isMuted,
-                transcript,
+                messages,
+                liveTranscript,
+                pendingProposal,
                 conversationId,
                 isSidebarOpen,
                 startCall,
                 endCall,
                 toggleMute,
                 sendTextMessage,
+                approveProposal,
+                rejectProposal,
                 selectedMicrophoneId,
                 setMicrophoneDevice,
                 openSidebar,

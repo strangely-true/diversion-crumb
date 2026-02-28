@@ -271,6 +271,31 @@ async function executeToolCall(
       return `Escalated to human support. Reason: ${reason}. A support agent will be with you shortly.`;
     }
 
+    // ── requestSupervisorApproval ────────────────────────────────────────────
+    case "requestSupervisorApproval": {
+      const reason = String(args.reason ?? "Discount request");
+      const requestedPercent = Number(args.requestedDiscountPercent ?? 0);
+
+      // Business rule: supervisors approve max 20% discount
+      const maxApproved = 20;
+      const approvedPercent = Math.min(requestedPercent, maxApproved);
+
+      // Small artificial pause — makes it feel like a real supervisor review
+      await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+
+      const note =
+        requestedPercent > maxApproved
+          ? `The requested ${requestedPercent}% was above our policy limit, but ${approvedPercent}% has been approved.`
+          : `${approvedPercent}% discount approved.`;
+
+      return {
+        approved: true,
+        approvedDiscountPercent: approvedPercent,
+        message: `Supervisor approved a ${approvedPercent}% discount on this order. ${note}`,
+        supervisorNote: reason,
+      };
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }

@@ -8,33 +8,39 @@
 
 const SERVER_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
 
-export const BAKERY_SYSTEM_PROMPT = `You are Crumb, the friendly and knowledgeable voice assistant for Crumbs & Co. You speak naturally, warmly, and concisely — you are a voice assistant, so keep responses short and conversational.
+export const BAKERY_SYSTEM_PROMPT = `You are Crumb, the warm and knowledgeable AI assistant for Crumbs & Co. bakery. Keep responses short and conversational — you are a voice assistant.
 
-You can help customers:
-• Browse and search our bakery menu (cakes, breads, pastries, cookies…)
-• Get detailed information: ingredients, allergens, nutrition facts, pricing
-• Add or remove items from their cart
-• Navigate to any page on our website
-• Open the shopping cart drawer
-• Answer questions about store hours, policies, allergies, and more
-• Escalate to a human support agent if a customer needs personal help
+CAPABILITIES:
+• Browse and search the menu (cakes, breads, pastries, cookies)
+• Show products by navigating to their pages
+• Propose and execute cart changes with visual confirmation cards
+• Answer questions about store hours, ordering, allergens, nutrition
+• Handle discount requests via supervisor approval
+• Escalate to a human agent for issues beyond your authority
 
-Instructions:
-- Always call listProducts or getProduct before recommending items — never guess product details.
-- When a customer wants a product page opened, call navigateTo with the product slug path.
-- When adding to cart, you must first call getProduct to get the correct variantId, then call addToCart.
-- Allergen and nutrition data is returned by getProduct — always read it from the tool result.
-- If you cannot confidently answer a question, call searchKnowledge first, then escalate if still unsure.
-- Keep voice responses under 2 sentences when possible. Offer to elaborate if needed.
-- Do not invent products, prices, or ingredients.
+CORE RULES:
+1. Always call listProducts or getProduct before mentioning product details — never guess.
+2. When a customer asks to see a product, call navigateTo with /products/[slug].
+3. When suggesting cart changes, call proposeCartUpdate FIRST to show visual product cards, then wait for the customer to confirm before calling addToCart or updateCartItemQuantity.
+4. For discounts ≤15% you may approve directly. For anything higher, call requestSupervisorApproval.
+5. For complaints or account issues, call escalateToHuman.
+6. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
+7. Allergen and nutrition info comes from getProduct — never invent it.
+
+PROPOSAL FLOW (cart changes):
+1. Call proposeCartUpdate with items and a question like "Do you want me to add Bloom Booster to your cart?"
+2. Customer sees product cards with Yes/No buttons and responds.
+3. After Yes, call addToCart / updateCartItemQuantity to make the actual changes.
+4. After No, acknowledge and move on.
+
+SUPERVISOR APPROVAL FLOW:
+- Customer asks for a large discount → say "That's beyond what I'm authorised to approve — let me check with my supervisor."
+- Call requestSupervisorApproval with the requested percentage.
+- Relay the supervisor's decision to the customer.
 
 IMPORTANT:
-- You must NEVER say "Item added to cart" unless addToCart tool succeeds.
-- You must ALWAYS call addToCart before confirming cart updates.
-- You must NOT simulate cart updates.
-- All cart state must come from tool results.
-- If a cart tool fails, respond with the error from the tool.
-- Do not simulate cart updates conversationally.`;
+- NEVER say items were added/removed unless the tool succeeds.
+- Do not simulate any cart, order, or payment state.`;
 
 // ─── Assistant Configuration ──────────────────────────────────────────────────
 
@@ -222,9 +228,77 @@ export function buildVapiAssistantConfig() {
 
         // ────────────────────────────────────────────────────────────────────
         // CLIENT TOOLS  (no server URL → handled by the browser via Vapi SDK)
-        // The browser receives message.type === "tool-calls" and responds with
-        // vapi.send({ type: "add-message", message: { role: "tool", ... } })
         // ────────────────────────────────────────────────────────────────────
+
+        // proposeCartUpdate — show product confirmation cards in the widget
+        {
+          type: "function" as const,
+          function: {
+            name: "proposeCartUpdate",
+            description:
+              "Show the customer visual product confirmation cards asking if they want to update their cart. Call this BEFORE making actual cart changes via addToCart/updateCartItemQuantity.",
+            parameters: {
+              type: "object",
+              required: ["items", "message"],
+              properties: {
+                message: {
+                  type: "string",
+                  description:
+                    "Confirmation question shown above the cards, e.g. 'Do you want me to update the items in your cart?'",
+                },
+                items: {
+                  type: "array",
+                  description: "Products to show in the confirmation cards",
+                  items: {
+                    type: "object",
+                    required: ["name", "price"],
+                    properties: {
+                      variantId: { type: "string" },
+                      name: { type: "string" },
+                      price: { type: "number" },
+                      imageUrl: { type: "string" },
+                      action: {
+                        type: "string",
+                        enum: ["add", "remove", "replace"],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          // No server — client handles it via the Vapi SDK message event
+        },
+
+        // requestSupervisorApproval — bakery escalation / discount approval
+        {
+          type: "function" as const,
+          function: {
+            name: "requestSupervisorApproval",
+            description:
+              "Escalate a discount or exception request to a supervisor. Use when the customer requests a discount above 15%. Supervisor will review and respond with an approved amount.",
+            parameters: {
+              type: "object",
+              required: ["reason", "requestedDiscountPercent"],
+              properties: {
+                reason: {
+                  type: "string",
+                  description: "Why the customer is asking for this discount",
+                },
+                requestedDiscountPercent: {
+                  type: "number",
+                  description: "Discount percentage the customer requested",
+                },
+                conversationId: {
+                  type: "string",
+                  description: "Current conversation session ID",
+                },
+              },
+            },
+          },
+          server: { url: SERVER_TOOL_URL },
+        },
+
         {
           type: "function" as const,
           function: {
@@ -308,10 +382,12 @@ export function buildVapiAssistantConfig() {
 export type VapiClientToolName =
   | "navigateTo"
   | "openCartDrawer"
-  | "removeFromCart";
+  | "removeFromCart"
+  | "proposeCartUpdate";
 
 export const CLIENT_TOOL_NAMES = new Set<string>([
   "navigateTo",
   "openCartDrawer",
   "removeFromCart",
+  "proposeCartUpdate",
 ] satisfies VapiClientToolName[]);
