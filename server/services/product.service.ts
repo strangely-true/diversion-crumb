@@ -19,15 +19,26 @@ export class ProductService {
       ...(input.search
         ? {
             OR: [
-              { name: { contains: input.search, mode: "insensitive" as const } },
-              { description: { contains: input.search, mode: "insensitive" as const } },
-              { slug: { contains: input.search, mode: "insensitive" as const } },
+              {
+                name: { contains: input.search, mode: "insensitive" as const },
+              },
+              {
+                description: {
+                  contains: input.search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                slug: { contains: input.search, mode: "insensitive" as const },
+              },
             ],
           }
         : {}),
       ...(input.categorySlug ? { category: { slug: input.categorySlug } } : {}),
-      ...((isAdmin && input.includeDrafts)
-        ? (input.status ? { status: input.status } : {})
+      ...(isAdmin && input.includeDrafts
+        ? input.status
+          ? { status: input.status }
+          : {}
         : { status: ProductStatus.ACTIVE }),
     };
 
@@ -64,6 +75,31 @@ export class ProductService {
   static async getProductById(productId: string, isAdmin = false) {
     const product = await prisma.product.findUnique({
       where: { id: productId },
+      include: {
+        category: true,
+        images: { orderBy: { sortOrder: "asc" } },
+        variants: {
+          where: isAdmin ? undefined : { isActive: true },
+          include: { inventory: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+    }
+
+    if (!isAdmin && product.status !== ProductStatus.ACTIVE) {
+      throw new AppError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+    }
+
+    return product;
+  }
+
+  static async getProductBySlug(slug: string, isAdmin = false) {
+    const product = await prisma.product.findUnique({
+      where: { slug },
       include: {
         category: true,
         images: { orderBy: { sortOrder: "asc" } },
@@ -123,7 +159,8 @@ export class ProductService {
 
       for (const variant of input.variants) {
         const createdVariant = product.variants.find(
-          (candidate: { id: string; sku: string }) => candidate.sku === variant.sku,
+          (candidate: { id: string; sku: string }) =>
+            candidate.sku === variant.sku,
         );
 
         if (!createdVariant) {
@@ -155,7 +192,10 @@ export class ProductService {
         include: {
           category: true,
           images: { orderBy: { sortOrder: "asc" } },
-          variants: { include: { inventory: true }, orderBy: { createdAt: "asc" } },
+          variants: {
+            include: { inventory: true },
+            orderBy: { createdAt: "asc" },
+          },
         },
       });
     });
@@ -199,7 +239,10 @@ export class ProductService {
         include: {
           category: true,
           images: { orderBy: { sortOrder: "asc" } },
-          variants: { include: { inventory: true }, orderBy: { createdAt: "asc" } },
+          variants: {
+            include: { inventory: true },
+            orderBy: { createdAt: "asc" },
+          },
         },
       });
     });
@@ -216,20 +259,32 @@ export class ProductService {
     };
   }
 
-  static async adjustInventory(variantId: string, input: AdjustInventoryInput, adminUserId: string) {
+  static async adjustInventory(
+    variantId: string,
+    input: AdjustInventoryInput,
+    adminUserId: string,
+  ) {
     const inventory = await prisma.inventoryLevel.findUnique({
       where: { variantId },
       include: { variant: true },
     });
 
     if (!inventory) {
-      throw new AppError("Inventory record not found for this variant.", 404, "INVENTORY_NOT_FOUND");
+      throw new AppError(
+        "Inventory record not found for this variant.",
+        404,
+        "INVENTORY_NOT_FOUND",
+      );
     }
 
     const nextQuantity = inventory.quantity + input.quantityDelta;
 
     if (nextQuantity < 0) {
-      throw new AppError("Inventory cannot go below zero.", 400, "INVALID_INVENTORY_DELTA");
+      throw new AppError(
+        "Inventory cannot go below zero.",
+        400,
+        "INVALID_INVENTORY_DELTA",
+      );
     }
 
     return prisma.$transaction(async (tx) => {

@@ -2,7 +2,9 @@ import Link from "next/link";
 import Image from "next/image";
 import HeroBanner from "@/components/HeroBanner";
 import ProductCard from "@/components/ProductCard";
-import { featuredProducts } from "@/lib/products";
+import { mapDbProductToProduct } from "@/lib/products";
+import { ProductService } from "@/server/services/product.service";
+import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 
 const categories = [
   {
@@ -59,7 +61,15 @@ const sectionImages = {
     "https://images.unsplash.com/photo-1563729784474-d77dbb933a9e?auto=format&fit=crop&w=500&q=80",
 };
 
-export default function Home() {
+export default async function Home() {
+  const { items } = await ProductService.listProducts(
+    listProductsQuerySchema.parse({ page: 1, pageSize: 4 }),
+    false,
+  );
+  const featuredProducts = items
+    .map(mapDbProductToProduct)
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+
   return (
     <div>
       <section className="bg-[color:var(--bg)] px-6 py-12">
@@ -186,7 +196,7 @@ export default function Home() {
                   <path d="M10 8.586L8.586 10 14.586 16 8.586 22 10 23.414 16 17.414z" />
                   <path d="M10 8.586L8.586 10 14.586 16 8.586 22 10 23.414 16 17.414z" transform="translate(8)" />
                 </svg>
-                
+
                 <div className="mb-4 flex items-center gap-3">
                   <div className="relative h-12 w-12 overflow-hidden rounded-full border-2 border-[color:var(--accent)] shadow-md">
                     <Image
@@ -219,7 +229,7 @@ export default function Home() {
           {/* Decorative accents */}
           <div className="pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full bg-[color:var(--accent)] opacity-10 blur-3xl"></div>
           <div className="pointer-events-none absolute -bottom-10 -left-10 h-60 w-60 rounded-full bg-[color:var(--accent-strong)] opacity-10 blur-3xl"></div>
-          
+
           <div className="relative z-10">
             <div className="mb-4 flex items-center justify-center gap-3">
               <div className="relative h-14 w-14 overflow-hidden rounded-xl border-2 border-[color:var(--accent)] shadow-md">
@@ -238,34 +248,34 @@ export default function Home() {
               Receive seasonal menu updates, exclusive offers, and baking stories.
             </p>
             <form className="mx-auto mt-8 flex max-w-xl flex-col gap-3 sm:flex-row">
-            <input
-              type="email"
-              required
-              placeholder="Enter your email"
-              className="w-full bg-[color:var(--surface-1)] shadow-lg"
-            />
-            <button
-              type="submit"
-              className="group whitespace-nowrap rounded-full bg-[color:var(--accent)] px-6 py-3 font-semibold text-[color:var(--accent-contrast)] shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-strong)]"
-            >
-              <span className="flex items-center gap-2">
-                Subscribe
-                <svg
-                  className="h-4 w-4 transition-transform group-hover:translate-x-1"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-              </span>
-            </button>
-          </form>
+              <input
+                type="email"
+                required
+                placeholder="Enter your email"
+                className="w-full bg-[color:var(--surface-1)] shadow-lg"
+              />
+              <button
+                type="submit"
+                className="group whitespace-nowrap rounded-full bg-[color:var(--accent)] px-6 py-3 font-semibold text-[color:var(--accent-contrast)] shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-strong)]"
+              >
+                <span className="flex items-center gap-2">
+                  Subscribe
+                  <svg
+                    className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M14 5l7 7m0 0l-7 7m7-7H3"
+                    />
+                  </svg>
+                </span>
+              </button>
+            </form>
           </div>
         </div>
       </section>
