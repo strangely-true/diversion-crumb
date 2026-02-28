@@ -192,8 +192,8 @@ export default function AgentWidget() {
                   isConnecting || isEscalated
                     ? undefined
                     : isActive
-                      ? endCall
-                      : startCall
+                      ? () => endCall()
+                      : () => startCall()
                 }
                 disabled={isConnecting || isEscalated}
                 className={cn(
