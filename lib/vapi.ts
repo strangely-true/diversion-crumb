@@ -58,7 +58,12 @@ export interface VapiIdentity {
   sessionId?: string;
 }
 
-export function buildVapiAssistantConfig(identity?: VapiIdentity) {
+export function buildVapiAssistantConfig(userName?: string, identity?: VapiIdentity) {
+  const safeUserName = typeof userName === "string" ? userName.trim() : "";
+  const firstName = safeUserName.split(/\s+/).filter(Boolean)[0] ?? "";
+  const personalizedSystemPrompt = firstName
+    ? `The customer's first name is ${firstName}. Greet them naturally using only their first name.\n\n${BAKERY_SYSTEM_PROMPT}`
+    : BAKERY_SYSTEM_PROMPT;
   const serverUrl = buildServerToolUrl(identity);
   return {
     name: "Crumb – Crumbs & Co. Assistant",
@@ -67,7 +72,7 @@ export function buildVapiAssistantConfig(identity?: VapiIdentity) {
     model: {
       provider: "google" as const,
       model: "gemini-2.5-flash",
-      systemPrompt: BAKERY_SYSTEM_PROMPT,
+      systemPrompt: personalizedSystemPrompt,
 
       tools: [
         // ────────────────────────────────────────────────────────────────────
@@ -367,8 +372,9 @@ export function buildVapiAssistantConfig(identity?: VapiIdentity) {
       language: "en-US",
     },
 
-    firstMessage:
-      "Hi! I'm Crumb, your Crumbs & Co. assistant. I can help you find the perfect bake, check ingredients and allergens, or add things to your cart — just ask!",
+    firstMessage: firstName
+      ? `Hi ${firstName}! I'm Crumb, your Crumbs & Co. assistant. I can help you find the perfect bake, check ingredients and allergens, or add things to your cart — just ask!`
+      : "Hi! I'm Crumb, your Crumbs & Co. assistant. I can help you find the perfect bake, check ingredients and allergens, or add things to your cart — just ask!",
 
     endCallPhrases: [
       "goodbye",

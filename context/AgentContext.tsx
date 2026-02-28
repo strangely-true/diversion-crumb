@@ -80,7 +80,7 @@ interface AgentContextValue {
     pendingProposal: CartProposal | null;
     conversationId: string | null;
     isSidebarOpen: boolean;
-    startCall: () => Promise<void>;
+    startCall: (userName?: string) => Promise<void>;
     endCall: () => void;
     toggleMute: () => void;
     sendTextMessage: (text: string) => Promise<void>;
@@ -495,7 +495,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }, [isMeetingEndedEjection, flushMessageSave]);
 
     // ── Start call ────────────────────────────────────────────────────────────────
-    const startCall = useCallback(async () => {
+    const startCall = useCallback(async (userName?: string) => {
         if (status !== "idle" || isStartingRef.current) return;
         isStartingRef.current = true;
         setStatus("connecting");
@@ -512,7 +512,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 if (guestSid) identity.sessionId = guestSid;
             } catch { /* ignore storage access issues */ }
 
-            const config = buildVapiAssistantConfig(identity);
+            const resolvedUserName =
+                typeof userName === "string" && userName.trim().length > 0
+                    ? userName
+                    : (user?.name ?? undefined);
+            const config = buildVapiAssistantConfig(resolvedUserName, identity);
 
             // Attach the assistantId if configured, otherwise use inline config
             const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
