@@ -247,8 +247,8 @@ export default async function ProductDetailPage({ params }: PageProps) {
                                                 <div
                                                     key={label}
                                                     className={`flex items-center justify-between px-4 py-2.5 text-sm ${highlight
-                                                            ? "bg-[color:var(--surface-2)] font-semibold"
-                                                            : "bg-[color:var(--surface-1)]"
+                                                        ? "bg-[color:var(--surface-2)] font-semibold"
+                                                        : "bg-[color:var(--surface-1)]"
                                                         }`}
                                                 >
                                                     <span className="text-[color:var(--text-muted)]">{label}</span>
