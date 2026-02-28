@@ -161,9 +161,24 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     // Calling `onMessageRef.current(msg)` in the Vapi listener avoids the
     // stale-closure problem (Vapi attaches the listener once at init time).
     const onMessageRef = useRef<(msg: VapiMessage) => void>(() => { });
+    // Also store handleClientTool in a ref so handleMessage always calls the
+    // latest version (secondary stale-closure fix).
+    const handleClientToolRef = useRef<(vapi: Vapi, call: ToolCall) => Promise<void>>(
+        async () => { console.warn("[Crumb] handleClientToolRef called before init"); },
+    );
 
     const handleMessage = useCallback(
         (msg: VapiMessage) => {
+            // ── Log every raw Vapi message ────────────────────────────────────
+            if (msg.type !== "transcript") {
+                // Skip partial transcripts to avoid console spam, log everything else
+                console.log(
+                    `%c[Crumb:msg] type=${msg.type}`,
+                    "color:#4ade80;font-weight:bold",
+                    JSON.parse(JSON.stringify(msg)), // deep clone to avoid stale reference
+                );
+            }
+
             // ── Live transcripts ──────────────────────────────────────────────
             if (msg.type === "transcript") {
                 const role = (msg.role ?? "assistant") as "user" | "assistant";
@@ -186,15 +201,46 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
             // ── Client-side tool calls ────────────────────────────────────────
             const vapi = vapiRef.current;
-            if (!vapi) return;
+            if (!vapi) {
+                console.error("[Crumb:msg] vapiRef is null — cannot handle tool call");
+                return;
+            }
 
-            const callList: ToolCall[] =
-                msg.type === "tool-calls" && Array.isArray(msg.toolCallList)
-                    ? msg.toolCallList.filter((c) => CLIENT_TOOL_NAMES.has(c.function.name))
-                    : [];
+            let callList: ToolCall[] = [];
+
+            if (msg.type === "tool-calls" && Array.isArray(msg.toolCallList)) {
+                console.log(
+                    `%c[Crumb:tool-calls] ${msg.toolCallList.length} calls received:`,
+                    "color:#facc15;font-weight:bold",
+                    msg.toolCallList.map((c) => c.function.name),
+                );
+                console.log(
+                    `%c[Crumb:tool-calls] CLIENT_TOOL_NAMES:`,
+                    "color:#facc15",
+                    [...CLIENT_TOOL_NAMES],
+                );
+                callList = msg.toolCallList.filter((c) => {
+                    const isClient = CLIENT_TOOL_NAMES.has(c.function.name);
+                    console.log(
+                        `%c[Crumb:tool-calls] ${c.function.name} → ${isClient ? "CLIENT ✓" : "SERVER (skipped)"}`,
+                        isClient ? "color:#4ade80" : "color:#94a3b8",
+                    );
+                    return isClient;
+                });
+            }
 
             if (msg.type === "function-call" && msg.functionCall) {
                 const { name, parameters, id } = msg.functionCall;
+                console.log(
+                    `%c[Crumb:function-call] name=${name}`,
+                    "color:#facc15;font-weight:bold",
+                    { parameters, id },
+                );
+                console.log(
+                    `%c[Crumb:function-call] CLIENT_TOOL_NAMES contains "${name}":`,
+                    "color:#facc15",
+                    CLIENT_TOOL_NAMES.has(name),
+                );
                 if (CLIENT_TOOL_NAMES.has(name)) {
                     callList.push({
                         id: id ?? crypto.randomUUID(),
@@ -204,15 +250,30 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 }
             }
 
+            if (callList.length === 0 && msg.type !== "tool-calls" && msg.type !== "function-call") {
+                return; // nothing to execute
+            }
+
+            if (callList.length === 0) {
+                console.log("%c[Crumb:tool-calls] No client tools to execute for this message", "color:#94a3b8");
+                return;
+            }
+
+            console.log(
+                `%c[Crumb:tool-calls] Executing ${callList.length} client tool(s):`,
+                "color:#4ade80;font-weight:bold",
+                callList.map((c) => c.function.name),
+            );
+
             for (const call of callList) {
-                void handleClientTool(vapi, call);
+                // Use the ref so we always call the freshest version of handleClientTool
+                void handleClientToolRef.current(vapi, call);
             }
         },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
         [scheduleMessageSave],
     );
 
-    // Keep the ref current — no stale closures in Vapi listeners
+    // Keep the refs current — no stale closures in Vapi listeners
     useEffect(() => {
         onMessageRef.current = handleMessage;
     }, [handleMessage]);
@@ -224,23 +285,32 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             let args: Record<string, unknown> = {};
             try { args = JSON.parse(call.function.arguments); } catch { /* ignore */ }
 
+            console.log(
+                `%c[Crumb:exec] ▶ ${name}`,
+                "color:#818cf8;font-weight:bold;font-size:13px",
+                { id: call.id, args },
+            );
+
             let result = "done";
 
             try {
                 switch (name) {
                     case "navigateTo": {
                         const path = String(args.path ?? "/");
+                        console.log(`%c[Crumb:exec] navigateTo → ${path}`, "color:#818cf8");
                         router.push(path);
                         result = `Navigated to ${path}`;
                         break;
                     }
                     case "openCartDrawer": {
+                        console.log("%c[Crumb:exec] openCartDrawer → calling openCart()", "color:#818cf8");
                         openCart();
                         result = "Cart drawer opened";
                         break;
                     }
                     case "removeFromCart": {
                         const cartItemId = String(args.cartItemId ?? "");
+                        console.log(`%c[Crumb:exec] removeFromCart → cartItemId=${cartItemId}`, "color:#818cf8");
                         const sid = (() => {
                             try { return localStorage.getItem("bakery_guest_session_id") ?? undefined; } catch { return undefined; }
                         })();
@@ -253,26 +323,46 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                     case "proposeCartUpdate": {
                         const items = (args.items as CartProposalItem[] | undefined) ?? [];
                         const message = String(args.message ?? "Do you want me to update your cart?");
+                        console.log(
+                            `%c[Crumb:exec] proposeCartUpdate → ${items.length} item(s)`,
+                            "color:#818cf8",
+                            { message, items },
+                        );
                         setPendingProposal({ toolCallId: call.id, message, items });
                         setIsSidebarOpen(true);
                         result = "Confirmation cards displayed. Ask the customer to confirm or decline.";
                         break;
                     }
                     default:
+                        console.warn(`%c[Crumb:exec] UNKNOWN client tool: ${name}`, "color:#f87171");
                         result = `Unknown client tool: ${name}`;
                 }
             } catch (err) {
                 result = `Error: ${err instanceof Error ? err.message : "Tool failed"}`;
+                console.error(`%c[Crumb:exec] ${name} THREW:`, "color:#f87171", err);
             }
+
+            console.log(
+                `%c[Crumb:exec] ◀ ${name} result → sending to Vapi:`,
+                "color:#818cf8",
+                result,
+            );
 
             vapi.send({
                 type: "add-message",
                 message: { role: "tool" as const, tool_call_id: call.id, content: result },
                 triggerResponseEnabled: true,
             });
+
+            console.log(`%c[Crumb:exec] vapi.send(tool result) dispatched for ${name}`, "color:#4ade80");
         },
         [router, openCart, removeItem, reloadCart],
     );
+
+    // Keep handleClientToolRef current
+    useEffect(() => {
+        handleClientToolRef.current = handleClientTool;
+    }, [handleClientTool]);
 
     // ── Proposal accept / reject ──────────────────────────────────────────────
     const approveProposal = useCallback(() => {
@@ -320,6 +410,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         const instance = new VapiSDK(publicKey);
 
         instance.on("call-start", () => {
+            console.log("%c[Crumb:vapi] ✅ call-start", "color:#4ade80;font-weight:bold");
+            console.log("%c[Crumb:vapi] CLIENT_TOOL_NAMES registered:", "color:#4ade80", [...CLIENT_TOOL_NAMES]);
             setStatus("active");
             setMessages([]);
             setLiveTranscript(null);
@@ -342,6 +434,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         });
 
         instance.on("call-end", () => {
+            console.log("%c[Crumb:vapi] 🔴 call-end", "color:#f87171;font-weight:bold");
             setStatus("idle");
             setIsSpeaking(false);
             setIsMuted(false);
@@ -354,14 +447,18 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             flushMessageSave();
         });
 
-        instance.on("speech-start", () => setIsSpeaking(true));
-        instance.on("speech-end", () => setIsSpeaking(false));
+        instance.on("speech-start", () => { console.log("%c[Crumb:vapi] speech-start", "color:#64748b"); setIsSpeaking(true); });
+        instance.on("speech-end", () => { console.log("%c[Crumb:vapi] speech-end", "color:#64748b"); setIsSpeaking(false); });
 
         // Delegate to the ref — always calls the current (fresh) handler
         // This is the fix for the stale-closure bug.
-        instance.on("message", (msg: VapiMessage) => onMessageRef.current(msg));
+        instance.on("message", (msg: VapiMessage) => {
+            console.log(`%c[Crumb:vapi] raw message event type=${msg.type}`, "color:#64748b");
+            onMessageRef.current(msg);
+        });
 
         instance.on("error", (err) => {
+            console.error("%c[Crumb:vapi] ❌ error event:", "color:#f87171;font-weight:bold", err);
             if (isMeetingEndedEjection(err)) {
                 setStatus("idle");
                 setIsSpeaking(false);
