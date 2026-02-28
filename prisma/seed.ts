@@ -11,7 +11,6 @@ import {
   ShipmentStatus,
   UserRole,
 } from "../generated/prisma/enums";
-import { hashPassword } from "../server/auth/password";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -41,13 +40,10 @@ async function main() {
   await prisma.address.deleteMany();
   await prisma.user.deleteMany();
 
-  const adminPasswordHash = await hashPassword("seeded-admin-password");
-  const customerPasswordHash = await hashPassword("seeded-customer-password");
-
   const admin = await prisma.user.create({
     data: {
+      id: "auth0|seed-admin",
       email: "admin@bakery.demo",
-      password: adminPasswordHash,
       name: "Bakery Admin",
       phone: "+15550000001",
       role: UserRole.ADMIN,
@@ -56,8 +52,8 @@ async function main() {
 
   const customer = await prisma.user.create({
     data: {
+      id: "auth0|seed-customer",
       email: "customer@bakery.demo",
-      password: customerPasswordHash,
       name: "Mia Customer",
       phone: "+15550000002",
       role: UserRole.CUSTOMER,

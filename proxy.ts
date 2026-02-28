@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
   // 4. Attach CORS headers to API responses.
   if (pathname.startsWith("/api")) {
     buildCorsHeaders(request).forEach((value, key) =>
-      authResponse.headers.set(key, value)
+      authResponse.headers.set(key, value),
     );
   }
 

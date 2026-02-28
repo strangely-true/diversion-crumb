@@ -34,12 +34,17 @@ export async function getOptionalSession(
 ): Promise<AuthSession | null> {
   const session = await auth0.getSession();
   if (!session?.user?.sub) return null;
-  return syncUser(session.user.sub, session.user.email ?? "", session.user.name);
+  return syncUser(
+    session.user.sub,
+    session.user.email ?? "",
+    session.user.name,
+  );
 }
 
 export async function requireAuth(_request?: unknown): Promise<AuthSession> {
   const session = await getOptionalSession();
-  if (!session) throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
+  if (!session)
+    throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
   return session;
 }
 
