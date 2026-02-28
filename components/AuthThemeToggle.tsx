@@ -27,6 +27,7 @@ export default function AuthThemeToggle() {
       const nextTheme: ThemeMode = current === "light" ? "dark" : "light";
       window.localStorage.setItem("theme", nextTheme);
       document.documentElement.setAttribute("data-theme", nextTheme);
+      document.documentElement.classList.toggle("dark", nextTheme === "dark");
       return nextTheme;
     });
   };

@@ -45,10 +45,11 @@ export default function Header() {
 
     const toggleTheme = () => {
         setTheme((current) => {
-            const next: ThemeMode = current === "light" ? "dark" : "light";
-            window.localStorage.setItem("theme", next);
-            document.documentElement.setAttribute("data-theme", next);
-            return next;
+            const nextTheme: ThemeMode = current === "light" ? "dark" : "light";
+            window.localStorage.setItem("theme", nextTheme);
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            document.documentElement.classList.toggle("dark", nextTheme === "dark");
+            return nextTheme;
         });
     };
 

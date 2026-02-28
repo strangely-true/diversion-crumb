@@ -27,18 +27,27 @@ async function syncUser(
   return { userId: user.id, role: user.role, email: user.email };
 }
 
+async function getAuth0Identity() {
+  const session = await auth0.getSession();
+  if (!session?.user?.sub) {
+    return null;
+  }
+
+  return {
+    sub: session.user.sub,
+    email: session.user.email ?? "",
+    name: session.user.name,
+  };
+}
+
 // The _request parameter is kept so existing controllers compile without changes.
 export async function getOptionalSession(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _request?: unknown,
 ): Promise<AuthSession | null> {
-  const session = await auth0.getSession();
-  if (!session?.user?.sub) return null;
-  return syncUser(
-    session.user.sub,
-    session.user.email ?? "",
-    session.user.name,
-  );
+  const identity = await getAuth0Identity();
+  if (!identity) return null;
+  return syncUser(identity.sub, identity.email, identity.name);
 }
 
 export async function requireAuth(_request?: unknown): Promise<AuthSession> {
@@ -49,8 +58,19 @@ export async function requireAuth(_request?: unknown): Promise<AuthSession> {
 }
 
 export async function requireAdmin(_request?: unknown): Promise<AuthSession> {
-  const session = await requireAuth();
-  if (session.role !== UserRole.ADMIN)
+  const identity = await getAuth0Identity();
+
+  if (!identity) {
+    throw new AppError("Authentication required.", 401, "UNAUTHORIZED");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: identity.sub },
+    select: { id: true, role: true, email: true },
+  });
+
+  if (!user || user.role !== UserRole.ADMIN)
     throw new AppError("Admin role required.", 403, "FORBIDDEN");
-  return session;
+
+  return { userId: user.id, role: user.role, email: user.email };
 }
