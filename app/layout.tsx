@@ -23,12 +23,12 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "SweetCrumbs Bakery | Artisan Bakery E-Commerce",
+  title: "Crumbs & Co. | Artisan Bakery E-Commerce",
   description:
-    "Shop artisan cakes, breads, and pastries from SweetCrumbs Bakery. Freshly baked and delivered with care.",
+    "Shop artisan cakes, breads, and pastries from Crumbs & Co. Freshly baked and delivered with care.",
   metadataBase: new URL("http://localhost:3000"),
   openGraph: {
-    title: "SweetCrumbs Bakery",
+    title: "Crumbs & Co.",
     description:
       "Premium bakery e-commerce for cakes, breads, and pastries.",
     type: "website",

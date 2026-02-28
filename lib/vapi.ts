@@ -1,5 +1,5 @@
 /**
- * Vapi voice assistant configuration for The Golden Crumb Bakery.
+ * Vapi voice assistant configuration for Crumbs & Co.
  *
  * Architecture:
  *  - Server tools  → POST /api/vapi/tools  (Vapi calls our backend)
@@ -8,7 +8,7 @@
 
 const SERVER_TOOL_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000"}/api/vapi/tools`;
 
-export const BAKERY_SYSTEM_PROMPT = `You are Rosie, the friendly and knowledgeable voice assistant for The Golden Crumb Bakery. You speak naturally, warmly, and concisely — you are a voice assistant, so keep responses short and conversational.
+export const BAKERY_SYSTEM_PROMPT = `You are Crumb, the friendly and knowledgeable voice assistant for Crumbs & Co. You speak naturally, warmly, and concisely — you are a voice assistant, so keep responses short and conversational.
 
 You can help customers:
 • Browse and search our bakery menu (cakes, breads, pastries, cookies…)
@@ -32,7 +32,7 @@ Instructions:
 
 export function buildVapiAssistantConfig() {
   return {
-    name: "Rosie – Golden Crumb Assistant",
+    name: "Crumb – Crumbs & Co. Assistant",
 
     // ── Model ──────────────────────────────────────────────────────────────────
     model: {
@@ -235,7 +235,7 @@ export function buildVapiAssistantConfig() {
     },
 
     firstMessage:
-      "Hi! I'm Rosie, your Golden Crumb assistant. I can help you find the perfect bake, check ingredients and allergens, or add things to your cart — just ask!",
+      "Hi! I'm Crumb, your Crumbs & Co. assistant. I can help you find the perfect bake, check ingredients and allergens, or add things to your cart — just ask!",
 
     endCallPhrases: [
       "goodbye",

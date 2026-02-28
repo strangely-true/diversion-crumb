@@ -30,7 +30,7 @@ const categories = [
 const testimonials = [
   {
     quote:
-      "SweetCrumbs made our wedding unforgettable. The vanilla berry cake was perfect.",
+      "Crumbs & Co. made our wedding unforgettable. The vanilla berry cake was perfect.",
     author: "Anika M.",
     image:
       "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80",
@@ -52,7 +52,7 @@ const testimonials = [
 
 const sectionImages = {
   "Featured Products":
-    "https://images.unsplash.com/photo-1519864600265-abb23847ef2c?auto=format&fit=crop&w=500&q=80",
+    "/images/featured-products-icon.svg",
   "Shop by Category":
     "https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=500&q=80",
   "What Customers Say":

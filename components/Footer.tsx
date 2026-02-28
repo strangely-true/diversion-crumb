@@ -6,8 +6,8 @@ export default function Footer() {
             <div className="mx-auto grid max-w-7xl gap-8 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                     <Image
-                        src="/images/sweetcrumbs-logo.svg"
-                        alt="SweetCrumbs Bakery logo"
+                        src="/images/crumbs-and-co-logo.svg"
+                        alt="Crumbs & Co. logo"
                         width={190}
                         height={50}
                         className="logo-mark"
@@ -27,7 +27,7 @@ export default function Footer() {
                 </div>
 
                 <div className="text-sm text-[color:var(--text-muted)] lg:text-right">
-                    © {new Date().getFullYear()} SweetCrumbs Bakery. All rights reserved.
+                    © {new Date().getFullYear()} Crumbs & Co. All rights reserved.
                 </div>
             </div>
         </footer>

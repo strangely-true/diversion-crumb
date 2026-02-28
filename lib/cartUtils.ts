@@ -1,6 +1,6 @@
 import type { CartItem } from "@/types/cart";
 
-export const CART_STORAGE_KEY = "sweetcrumbs-cart-v3";
+export const CART_STORAGE_KEY = "crumbs-and-co-cart-v1";
 
 function roundToTwo(value: number) {
     return Math.round(value * 100) / 100;

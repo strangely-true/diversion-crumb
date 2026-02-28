@@ -104,16 +104,6 @@
     height: auto;
   }
 
-  :root[data-theme="dark"] .logo-mark {
-    filter: brightness(0) invert(1);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) .logo-mark {
-      filter: brightness(0) invert(1);
-    }
-  }
-
   input,
   select,
   textarea {

@@ -46,8 +46,8 @@ export default function Header() {
             <div className="mx-auto grid max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-4 px-6 py-3">
                 <Link href="/" className="flex items-center gap-3">
                     <Image
-                        src="/images/sweetcrumbs-logo.svg"
-                        alt="SweetCrumbs Bakery logo"
+                        src="/images/crumbs-and-co-logo.svg"
+                        alt="Crumbs & Co. logo"
                         width={180}
                         height={48}
                         className="logo-mark"

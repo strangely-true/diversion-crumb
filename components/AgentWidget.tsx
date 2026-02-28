@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Mic, MicOff, PhoneOff, Loader2, Bot, X } from "lucide-react";
+import { useEffect } from "react";
+import { Mic, MicOff, PhoneOff, Loader2, Bot, X, Sparkles } from "lucide-react";
 import { useAgent } from "@/context/AgentContext";
 
 /**
@@ -9,16 +9,25 @@ import { useAgent } from "@/context/AgentContext";
  * Fixed to the right edge of the viewport; visible on all pages except auth.
  *
  * UX states:
- *  idle        → "Talk to Rosie" start button
+ *  idle        → "Talk to Crumb" start button
  *  connecting  → spinner + "Connecting…"
  *  active      → live transcript, mute + end controls
  *  escalated   → "Human agent joining…"
  */
 export default function AgentWidget() {
-    const { status, isSpeaking, isMuted, transcript, startCall, endCall, toggleMute } =
-        useAgent();
-
-    const [isOpen, setIsOpen] = useState(false);
+    const {
+        status,
+        isSpeaking,
+        isMuted,
+        transcript,
+        isSidebarOpen,
+        startCall,
+        endCall,
+        toggleMute,
+        openSidebar,
+        closeSidebar,
+        toggleSidebar,
+    } = useAgent();
 
     const isConnecting = status === "connecting";
     const isActive = status === "active";
@@ -26,22 +35,31 @@ export default function AgentWidget() {
 
     // Auto-open sidebar when a call becomes active
     useEffect(() => {
-        if (isActive) setIsOpen(true);
-    }, [isActive]);
+        if (isActive) openSidebar();
+    }, [isActive, openSidebar]);
 
     return (
         <>
+            <div
+                onClick={closeSidebar}
+                className={`fixed inset-0 z-[79] bg-black/30 transition-opacity duration-500 ${
+                    isSidebarOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+                }`}
+                aria-hidden={!isSidebarOpen}
+            />
+
             {/* ── Sidebar toggle tab ─────────────────────────────────────────────── */}
             <button
                 type="button"
-                onClick={() => setIsOpen((o) => !o)}
-                title={isOpen ? "Close assistant" : "Chat with Rosie"}
-                aria-label={isOpen ? "Close assistant" : "Chat with Rosie"}
+                onClick={toggleSidebar}
+                title={isSidebarOpen ? "Close assistant" : "Chat with Crumb"}
+                aria-label={isSidebarOpen ? "Close assistant" : "Chat with Crumb"}
                 className={`
-                    fixed right-0 top-1/2 z-[81] -translate-y-1/2
+                    fixed top-1/2 z-[81] -translate-y-1/2
                     flex flex-col items-center gap-1.5
                     rounded-l-2xl px-2.5 py-5 shadow-lg
-                    transition-all duration-200
+                    transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
+                    ${isSidebarOpen ? "right-[22rem]" : "right-0"}
                     ${isActive
                         ? "bg-green-500 hover:bg-green-600 text-white"
                         : isConnecting
@@ -60,7 +78,7 @@ export default function AgentWidget() {
                     className="text-[10px] font-semibold uppercase tracking-widest"
                     style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
                 >
-                    Rosie
+                    Crumb
                 </span>
                 {/* Active pulse dot */}
                 {isActive && (
@@ -71,31 +89,32 @@ export default function AgentWidget() {
             {/* ── Sidebar panel ──────────────────────────────────────────────────── */}
             <aside
                 className={`
-                    fixed right-0 top-0 z-[80] flex h-full w-80 flex-col
-                    bg-[color:var(--surface-1)] shadow-2xl
+                    fixed right-0 top-0 z-[80] flex h-full w-[22rem] flex-col
+                    bg-[linear-gradient(180deg,var(--surface-1)_0%,var(--surface-2)_100%)] shadow-2xl
                     border-l border-[color:var(--border)]
-                    transition-transform duration-300 ease-in-out
-                    ${isOpen ? "translate-x-0" : "translate-x-full"}
+                    transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
+                    ${isSidebarOpen ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"}
                 `}
             >
                 {/* ── Header ──────────────────────────────────────────────────────── */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)] bg-amber-50 dark:bg-amber-950/50 shrink-0">
+                <div className="relative flex items-center justify-between border-b border-[color:var(--border)] bg-[color:var(--surface-1)] px-4 py-3 shrink-0">
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,var(--surface-3),transparent_65%)] opacity-90" />
                     <div className="flex items-center gap-2">
-                        <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-amber-500 text-white">
+                        <div className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--accent)] text-[color:var(--accent-contrast)] shadow-[var(--shadow-soft)]">
                             <Bot size={16} />
                             {isActive && (
-                                <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-amber-50 dark:ring-amber-950/50 animate-pulse" />
+                                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-[color:var(--surface-1)] animate-pulse" />
                             )}
                         </div>
-                        <div>
-                            <p className="text-sm font-semibold text-[color:var(--text-strong)] leading-none">Rosie</p>
-                            <p className="text-xs text-[color:var(--text-muted)] mt-0.5">AI Bakery Assistant</p>
+                        <div className="relative z-10">
+                            <p className="text-sm font-semibold text-[color:var(--text-strong)] leading-none">Crumb</p>
+                            <p className="mt-0.5 text-xs text-[color:var(--text-muted)]">AI Bakery Assistant</p>
                         </div>
                     </div>
                     <button
                         type="button"
-                        onClick={() => setIsOpen(false)}
-                        className="flex h-7 w-7 items-center justify-center rounded-full text-[color:var(--text-muted)] hover:bg-[color:var(--surface-2)] transition-colors"
+                        onClick={closeSidebar}
+                        className="relative z-10 flex h-7 w-7 items-center justify-center rounded-full text-[color:var(--text-muted)] transition-colors hover:bg-[color:var(--surface-2)]"
                         title="Close"
                     >
                         <X size={15} />
@@ -103,7 +122,7 @@ export default function AgentWidget() {
                 </div>
 
                 {/* ── Status bar ──────────────────────────────────────────────────── */}
-                <div className="flex items-center gap-2 px-4 py-2 text-xs border-b border-[color:var(--border)] shrink-0 bg-[color:var(--surface-2)]">
+                <div className="flex items-center gap-2 border-b border-[color:var(--border)] bg-[color:var(--surface-2)] px-4 py-2 text-xs shrink-0">
                     <span
                         className={`h-2 w-2 rounded-full shrink-0 ${isActive
                                 ? "bg-green-500 animate-pulse"
@@ -119,7 +138,7 @@ export default function AgentWidget() {
                             ? "Connecting…"
                             : isActive
                                 ? isSpeaking
-                                    ? "Rosie is speaking…"
+                                    ? "Crumb is speaking…"
                                     : "Listening…"
                                 : isEscalated
                                     ? "Escalating to human agent…"
@@ -130,23 +149,23 @@ export default function AgentWidget() {
                 {/* ── Conversation area ────────────────────────────────────────────── */}
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
                     {isActive && transcript ? (
-                        <div className="rounded-2xl bg-[color:var(--surface-2)] px-4 py-3 text-sm ring-1 ring-[color:var(--border)]">
+                        <div className="rounded-2xl bg-[color:var(--surface-1)] px-4 py-3 text-sm ring-1 ring-[color:var(--border)] shadow-[var(--shadow-soft)] transition-all duration-300">
                             <div className="mb-1.5 flex items-center gap-1.5 text-xs text-[color:var(--text-muted)]">
                                 <span
                                     className={`inline-block h-2 w-2 rounded-full ${isSpeaking ? "animate-pulse bg-green-500" : "bg-amber-400"
                                         }`}
                                 />
-                                {isSpeaking ? "Rosie" : "You said"}
+                                {isSpeaking ? "Crumb" : "You said"}
                             </div>
                             <p className="leading-relaxed text-[color:var(--text-primary)]">{transcript}</p>
                         </div>
                     ) : (
                         <div className="mt-6 flex flex-col items-center gap-3 text-center px-2">
-                            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-500">
-                                <Bot size={28} />
+                            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--surface-3)] text-[color:var(--accent)] ring-1 ring-[color:var(--border)]">
+                                <Sparkles size={26} />
                             </div>
                             <div>
-                                <p className="font-semibold text-[color:var(--text-strong)]">Hi, I'm Rosie!</p>
+                                <p className="font-semibold text-[color:var(--text-strong)]">Hi, I'm Crumb!</p>
                                 <p className="mt-1 text-sm text-[color:var(--text-muted)] leading-relaxed">
                                     I can help you browse our menu, check ingredients, add items to your cart, and more.
                                 </p>
@@ -213,7 +232,7 @@ export default function AgentWidget() {
                                     ? "Connecting…"
                                     : isEscalated
                                         ? "Human agent joining…"
-                                        : "Talk to Rosie"}
+                                        : "Talk to Crumb"}
                             </span>
                         </button>
                     )}

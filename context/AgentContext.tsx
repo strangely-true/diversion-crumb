@@ -40,9 +40,13 @@ interface AgentContextValue {
     isMuted: boolean;
     transcript: string;
     conversationId: string | null;
+    isSidebarOpen: boolean;
     startCall: () => Promise<void>;
     endCall: () => void;
     toggleMute: () => void;
+    openSidebar: () => void;
+    closeSidebar: () => void;
+    toggleSidebar: () => void;
 }
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -61,6 +65,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const [isMuted, setIsMuted] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [conversationId, setConversationId] = useState<string | null>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     // ── Lazy Vapi initialisation (browser only) ────────────────────────────────
     const getVapi = useCallback(async (): Promise<Vapi> => {
@@ -80,6 +85,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
             setStatus("idle");
             setIsSpeaking(false);
             setIsMuted(false);
+            setIsSidebarOpen(false);
         });
 
         instance.on("speech-start", () => setIsSpeaking(true));
@@ -292,6 +298,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         setIsMuted(next);
     }, [isMuted]);
 
+    const openSidebar = useCallback(() => setIsSidebarOpen(true), []);
+    const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
+    const toggleSidebar = useCallback(() => {
+        setIsSidebarOpen((open) => !open);
+    }, []);
+
     // ── Cleanup on unmount ────────────────────────────────────────────────────────
     useEffect(() => {
         return () => {
@@ -307,9 +319,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
                 isMuted,
                 transcript,
                 conversationId,
+                isSidebarOpen,
                 startCall,
                 endCall,
                 toggleMute,
+                openSidebar,
+                closeSidebar,
+                toggleSidebar,
             }}
         >
             {children}

@@ -9,7 +9,11 @@ import {
     useState,
 } from "react";
 import type { Product } from "@/lib/products";
-import { CART_STORAGE_KEY, calculateCartTotals, safeParseCartItems } from "@/lib/cartUtils";
+import {
+    CART_STORAGE_KEY,
+    calculateCartTotals,
+    safeParseCartItems,
+} from "@/lib/cartUtils";
 import type { CartItem } from "@/types/cart";
 import {
     addCartItem,
