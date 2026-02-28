@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
-import { useAgent } from "@/context/AgentContext";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
     DropdownMenu,
@@ -25,7 +24,6 @@ type ThemeMode = "light" | "dark";
 export default function Header() {
     const { totalItems, toastMessage } = useCart();
     const { user, isAdmin, isAuthenticated, logout, login } = useAuth();
-    const { isSidebarOpen } = useAgent();
     const [theme, setTheme] = useState<ThemeMode>("light");
     const [mobileOpen, setMobileOpen] = useState(false);
     const pathname = usePathname();
@@ -72,8 +70,7 @@ export default function Header() {
     useEffect(() => { setMobileOpen(false); }, [pathname]);
 
     return (
-        <header className={`fixed top-0 left-0 z-50 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/90 shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-md transition-[right] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${isSidebarOpen ? "right-[22rem]" : "right-0"
-            }`}>
+        <header className="fixed top-0 left-0 right-0 z-50 border-b border-[color:var(--border)] bg-[color:var(--surface-1)]/90 shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-md">
             <div className="mx-auto grid max-w-7xl grid-cols-[auto_1fr_auto] items-center gap-4 px-6 py-3">
 
                 {/* ── Logo ──────────────────────────────────────────────────────── */}
