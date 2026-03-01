@@ -1,3 +1,4 @@
+import nodemailer from "nodemailer";
 import { UserRole } from "@/generated/prisma/enums";
 import { prisma } from "@/server/prisma/client";
 
@@ -13,6 +14,31 @@ function parseFallbackRecipients() {
     .filter(Boolean);
 }
 
+function createTransporter() {
+  const host = process.env.SMTP_HOST ?? "smtp.gmail.com";
+  const port = parseInt(process.env.SMTP_PORT ?? "587", 10);
+  const user = process.env.SMTP_EMAIL;
+  const pass = process.env.SMTP_PASSWORD;
+
+  if (!user || !pass) {
+    throw new Error(
+      "SMTP_EMAIL and SMTP_PASSWORD must be set in environment variables",
+    );
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  });
+}
+
+function getFromAddress() {
+  const email = process.env.SMTP_EMAIL ?? "noreply@crumbsandco.com";
+  return `"Crumbs & Co." <${email}>`;
+}
+
 export class NotificationService {
   static async notifyAllAdminsEscalation(input: {
     conversationId: string;
@@ -20,8 +46,16 @@ export class NotificationService {
     requestedDiscountPercent: number;
     allowedDiscountPercent: number;
   }) {
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (!resendApiKey) return;
+    let transporter: ReturnType<typeof createTransporter>;
+    try {
+      transporter = createTransporter();
+    } catch (err) {
+      console.error(
+        "[NotificationService.notifyAllAdminsEscalation] SMTP not configured:",
+        err,
+      );
+      return;
+    }
 
     const [admins, conversation] = await Promise.all([
       prisma.user.findMany({
@@ -51,7 +85,6 @@ export class NotificationService {
     if (uniqueRecipients.length === 0) return;
 
     const appBaseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
-    const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
     const customerLabel =
       conversation?.user?.email ?? conversation?.user?.name ?? "Guest user";
 
@@ -71,23 +104,18 @@ export class NotificationService {
       </div>
     `;
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: uniqueRecipients,
+    try {
+      await transporter.sendMail({
+        from: getFromAddress(),
+        to: uniqueRecipients.join(", "),
         subject,
         html,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      console.error("[NotificationService.notifyAllAdminsEscalation]", body);
+      });
+    } catch (err) {
+      console.error(
+        "[NotificationService.notifyAllAdminsEscalation] send failed:",
+        err,
+      );
     }
   }
 
@@ -97,15 +125,21 @@ export class NotificationService {
     cakeDescription: string;
     customerName?: string;
   }): Promise<{ success: boolean; error?: string }> {
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (!resendApiKey)
+    let transporter: ReturnType<typeof createTransporter>;
+    try {
+      transporter = createTransporter();
+    } catch (err) {
+      console.error(
+        "[NotificationService.sendCustomCakeOrderNotification] SMTP not configured:",
+        err,
+      );
       return { success: false, error: "Email service not configured" };
+    }
 
     const supportEmail = process.env.SUPPORT_EMAIL
       ? normalizeEmail(process.env.SUPPORT_EMAIL)
       : "";
 
-    const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
     const appBaseUrl = process.env.APP_BASE_URL ?? "http://localhost:3000";
     const customerLabel = input.customerName ?? input.customerEmail;
 
@@ -146,51 +180,36 @@ export class NotificationService {
   </a>
 </div>`;
 
-    const sends: Promise<Response>[] = [
-      fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [normalizeEmail(input.customerEmail)],
+    try {
+      const sends: Promise<unknown>[] = [
+        transporter.sendMail({
+          from: getFromAddress(),
+          to: normalizeEmail(input.customerEmail),
           subject: `Custom Cake Order Confirmation – ${formattedDate}`,
           html: customerHtml,
         }),
-      }),
-    ];
+      ];
 
-    if (supportEmail) {
-      sends.push(
-        fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [supportEmail],
+      if (supportEmail) {
+        sends.push(
+          transporter.sendMail({
+            from: getFromAddress(),
+            to: supportEmail,
             subject: `New Custom Cake Order from ${customerLabel}`,
             html: supportHtml,
           }),
-        }),
-      );
-    }
+        );
+      }
 
-    const responses = await Promise.all(sends);
-    const failed = responses.filter((r) => !r.ok);
-    if (failed.length > 0) {
-      const errBodies = await Promise.all(failed.map((r) => r.text()));
+      await Promise.all(sends);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(
-        "[NotificationService.sendCustomCakeOrderNotification]",
-        errBodies,
+        "[NotificationService.sendCustomCakeOrderNotification] send failed:",
+        err,
       );
-      return { success: false, error: "Failed to send one or more emails" };
+      return { success: false, error: message };
     }
-
-    return { success: true };
   }
 }
