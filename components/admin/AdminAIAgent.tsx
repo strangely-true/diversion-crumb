@@ -7,118 +7,157 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ToolResultRenderer } from "@/components/admin/chat/AdminChatComponents";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+type TextPart = { type: "text"; content: string };
+type ToolResultPart = { type: "tool-result"; toolName: string; result: unknown };
+type MessagePart = TextPart | ToolResultPart;
 
 type Message = {
     id: string;
     role: "user" | "assistant";
-    content: string;
+    parts: MessagePart[];
 };
 
-type ChatState = {
-    messages: Message[];
-    isLoading: boolean;
-    error: string | null;
-};
+// Helper: flat text content for the conversation history sent to the API
+function partsToText(parts: MessagePart[]): string {
+    return parts
+        .filter((p): p is TextPart => p.type === "text")
+        .map((p) => p.content)
+        .join("");
+}
 
-// ─── Custom streaming chat hook ───────────────────────────────────────────────
+// ─── AI SDK data-stream parser hook ──────────────────────────────────────────
 
 function useAdminChat() {
-    const [state, setState] = useState<ChatState>({
-        messages: [],
-        isLoading: false,
-        error: null,
-    });
-
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const abortRef = useRef<AbortController | null>(null);
+    // Keep a ref for the latest messages array so we can read it inside callbacks
+    const messagesRef = useRef<Message[]>([]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
 
     const append = useCallback(async (userContent: string) => {
         if (!userContent.trim()) return;
-
-        // Cancel any in-flight request
         abortRef.current?.abort();
         abortRef.current = new AbortController();
 
         const userMsg: Message = {
             id: crypto.randomUUID(),
             role: "user",
-            content: userContent.trim(),
+            parts: [{ type: "text", content: userContent.trim() }],
+        };
+        const assistantId = crypto.randomUUID();
+        const assistantPlaceholder: Message = {
+            id: assistantId,
+            role: "assistant",
+            parts: [],
         };
 
-        const assistantId = crypto.randomUUID();
+        setMessages((prev) => [...prev, userMsg, assistantPlaceholder]);
+        setIsLoading(true);
+        setError(null);
 
-        setState((prev) => ({
-            messages: [
-                ...prev.messages,
-                userMsg,
-                { id: assistantId, role: "assistant", content: "" },
-            ],
-            isLoading: true,
-            error: null,
-        }));
+        // Tool call map: toolCallId → toolName (built as stream arrives)
+        // Not needed for the custom NDJSON format but kept in case of format updates
+
+        function processLine(line: string) {
+            if (!line.trim()) return;
+            let part: { t: string; v?: string; name?: string; r?: unknown };
+            try { part = JSON.parse(line); } catch { return; }
+
+            if (part.t === "text" && typeof part.v === "string") {
+                // Text delta — append to last text part or create a new one
+                const delta = part.v;
+                setMessages((prev) =>
+                    prev.map((m) => {
+                        if (m.id !== assistantId) return m;
+                        const parts = [...m.parts];
+                        const last = parts.at(-1);
+                        if (last?.type === "text") {
+                            return { ...m, parts: [...parts.slice(0, -1), { type: "text" as const, content: last.content + delta }] };
+                        }
+                        return { ...m, parts: [...parts, { type: "text" as const, content: delta }] };
+                    }),
+                );
+            } else if (part.t === "tool" && typeof part.name === "string") {
+                // Tool result — add a tool-result part
+                const toolName = part.name;
+                const result = part.r;
+                setMessages((prev) =>
+                    prev.map((m) => {
+                        if (m.id !== assistantId) return m;
+                        return { ...m, parts: [...m.parts, { type: "tool-result" as const, toolName, result }] };
+                    }),
+                );
+            }
+        }
 
         try {
-            const historyForApi = state.messages.map(({ role, content }) => ({ role, content }));
-
+            // Build API history from current messages
+            const history = messagesRef.current.map((m) => ({
+                role: m.role,
+                content: partsToText(m.parts),
+            }));
             const response = await fetch("/api/admin/ai/agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    messages: [...historyForApi, { role: "user", content: userMsg.content }],
+                    messages: [...history, { role: "user", content: userContent.trim() }],
                 }),
                 signal: abortRef.current.signal,
             });
 
             if (!response.ok) {
-                const err = (await response.json().catch(() => ({ error: "Request failed" }))) as {
-                    error?: string;
-                };
+                const err = (await response.json().catch(() => ({ error: "Request failed" }))) as { error?: string };
                 throw new Error(err.error ?? `HTTP ${response.status}`);
             }
-
             if (!response.body) throw new Error("No response body");
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let partial = "";
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const chunk = decoder.decode(value, { stream: true });
-                setState((prev) => ({
-                    ...prev,
-                    messages: prev.messages.map((m) =>
-                        m.id === assistantId ? { ...m, content: m.content + chunk } : m,
-                    ),
-                }));
+                partial += decoder.decode(value, { stream: true });
+                const lines = partial.split("\n");
+                partial = lines.pop() ?? "";
+                for (const line of lines) processLine(line);
             }
+            if (partial.trim()) processLine(partial);
+
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") return;
-            const errorMessage = err instanceof Error ? err.message : "Something went wrong";
-            setState((prev) => ({
-                ...prev,
-                messages: prev.messages.map((m) =>
+            const msg = err instanceof Error ? err.message : "Something went wrong";
+            setError(msg);
+            setMessages((prev) =>
+                prev.map((m) =>
                     m.id === assistantId
-                        ? { ...m, content: `⚠️ Error: ${errorMessage}` }
+                        ? { ...m, parts: [{ type: "text", content: `⚠️ Error: ${msg}` }] }
                         : m,
                 ),
-                error: errorMessage,
-            }));
+            );
         } finally {
-            setState((prev) => ({ ...prev, isLoading: false }));
+            setIsLoading(false);
         }
-    }, [state.messages]);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const clear = useCallback(() => {
         abortRef.current?.abort();
-        setState({ messages: [], isLoading: false, error: null });
+        setMessages([]);
+        setIsLoading(false);
+        setError(null);
     }, []);
 
-    return { ...state, append, clear };
+    return { messages, isLoading, error, append, clear };
 }
 
-// ─── Markdown renderer for assistant messages ────────────────────────────────
+// ─── Markdown renderer ────────────────────────────────────────────────────────
 
 function AssistantMarkdown({ content }: { content: string }) {
     return (
@@ -146,7 +185,6 @@ function AssistantMarkdown({ content }: { content: string }) {
                     </blockquote>
                 ),
                 code: ({ className, children, ...props }) => {
-                    const isBlock = !!(props as { node?: { type?: string } }).node;
                     const isInline = !className && typeof children === "string" && !String(children).includes("\n");
                     if (isInline) {
                         return (
@@ -155,9 +193,7 @@ function AssistantMarkdown({ content }: { content: string }) {
                             </code>
                         );
                     }
-                    return (
-                        <code className={cn("font-mono text-[0.8em]", className)}>{children}</code>
-                    );
+                    return <code className={cn("font-mono text-[0.8em]", className)}>{children}</code>;
                 },
                 pre: ({ children }) => (
                     <pre className="bg-background/60 border border-border rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono leading-relaxed">
@@ -172,12 +208,8 @@ function AssistantMarkdown({ content }: { content: string }) {
                 thead: ({ children }) => <thead className="bg-background/50">{children}</thead>,
                 tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
                 tr: ({ children }) => <tr className="divide-x divide-border">{children}</tr>,
-                th: ({ children }) => (
-                    <th className="px-3 py-2 text-left font-semibold text-foreground">{children}</th>
-                ),
-                td: ({ children }) => (
-                    <td className="px-3 py-2 text-muted-foreground">{children}</td>
-                ),
+                th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-foreground">{children}</th>,
+                td: ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
             }}
         >
             {content}
@@ -187,8 +219,8 @@ function AssistantMarkdown({ content }: { content: string }) {
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ role, content }: { role: "user" | "assistant"; content: string }) {
-    const isUser = role === "user";
+function MessageBubble({ message }: { message: Message }) {
+    const isUser = message.role === "user";
 
     return (
         <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
@@ -203,20 +235,36 @@ function MessageBubble({ role, content }: { role: "user" | "assistant"; content:
                 {isUser ? <User className="size-3.5" /> : <Bot className="size-3.5" />}
             </div>
 
-            <div
-                className={cn(
-                    "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm",
-                    isUser
-                        ? "bg-primary text-primary-foreground rounded-tr-sm leading-relaxed"
-                        : "bg-muted text-foreground rounded-tl-sm",
-                )}
-            >
-                {isUser ? (
-                    content
-                ) : content ? (
-                    <AssistantMarkdown content={content} />
+            <div className={cn("flex flex-col gap-2", isUser ? "items-end max-w-[85%]" : "items-start w-full max-w-[95%]")}>
+                {message.parts.length === 0 ? (
+                    <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-2.5">
+                        <span className="text-muted-foreground italic text-xs">…</span>
+                    </div>
                 ) : (
-                    <span className="text-muted-foreground italic text-xs">…</span>
+                    message.parts.map((part, i) => {
+                        if (part.type === "text") {
+                            if (!part.content.trim()) return null;
+                            return (
+                                <div
+                                    key={i}
+                                    className={cn(
+                                        "rounded-2xl px-4 py-2.5 text-sm",
+                                        isUser
+                                            ? "bg-primary text-primary-foreground rounded-tr-sm leading-relaxed"
+                                            : "bg-muted text-foreground rounded-tl-sm",
+                                    )}
+                                >
+                                    {isUser ? part.content : <AssistantMarkdown content={part.content} />}
+                                </div>
+                            );
+                        }
+                        // tool-result part → rich component
+                        return (
+                            <div key={i} className="w-full">
+                                <ToolResultRenderer toolName={part.toolName} result={part.result} />
+                            </div>
+                        );
+                    })
                 )}
             </div>
         </div>
@@ -255,6 +303,8 @@ export default function AdminAIAgent() {
         "List all users",
         "List all orders",
         "Show low-stock inventory",
+        "List all products",
+        "Show all conversations",
     ];
 
     return (
@@ -267,7 +317,7 @@ export default function AdminAIAgent() {
                         Admin AI Agent
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                        Powered by Gemini 2.5 Flash · Full admin access
+                        Powered by Gemini 2.5 Flash · Full admin access · Streams charts & tables
                     </p>
                 </div>
                 {messages.length > 0 && (
@@ -294,7 +344,7 @@ export default function AdminAIAgent() {
                             <p className="font-medium text-sm">Admin Agent ready</p>
                             <p className="text-xs text-muted-foreground max-w-xs">
                                 Ask anything about users, products, orders, inventory, or
-                                conversations—or run an operation directly.
+                                conversations. Charts and tables stream in real-time.
                             </p>
                         </div>
                         <div className="flex flex-wrap gap-2 justify-center max-w-sm">
@@ -315,10 +365,10 @@ export default function AdminAIAgent() {
                 )}
 
                 {messages.map((m) => (
-                    <MessageBubble key={m.id} role={m.role} content={m.content} />
+                    <MessageBubble key={m.id} message={m} />
                 ))}
 
-                {isLoading && messages.at(-1)?.content === "" && (
+                {isLoading && messages.at(-1)?.parts.length === 0 && (
                     <div className="flex gap-3">
                         <div className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-muted text-muted-foreground">
                             <Bot className="size-3.5" />
@@ -365,3 +415,5 @@ export default function AdminAIAgent() {
         </div>
     );
 }
+
+

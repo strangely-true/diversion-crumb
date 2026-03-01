@@ -348,5 +348,44 @@ Acting admin: ${session.email} (ID: ${session.userId})`,
     },
   });
 
-  return result.toTextStreamResponse();
+  // Stream tool results + text as NDJSON so the client can render rich components.
+  // AI SDK v6 dropped toDataStreamResponse(); we iterate fullStream manually instead.
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const part of result.fullStream) {
+          let line: string | null = null;
+          if (part.type === "text-delta") {
+            line = JSON.stringify({ t: "text", v: part.text });
+          } else if (part.type === "tool-result") {
+            // SDK v6: tool-result parts expose `toolName` and `output` (not `result`)
+            // Cast through unknown to avoid union overlap complaints
+            const tp = part as unknown as {
+              toolName?: string;
+              output?: unknown;
+            };
+            line = JSON.stringify({
+              t: "tool",
+              name: tp.toolName ?? "unknown",
+              r: tp.output,
+            });
+          }
+          if (line) controller.enqueue(encoder.encode(line + "\n"));
+        }
+      } catch {
+        // swallow; client will handle incomplete stream
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
