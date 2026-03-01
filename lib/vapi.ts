@@ -28,6 +28,7 @@ CAPABILITIES:
 • Answer questions about store hours, ordering, allergens, nutrition
 • Handle discount requests via supervisor approval
 • Escalate to a human agent for issues beyond your authority
+• Accept custom cake orders and send confirmation emails to the customer and the bakery team
 
 CORE RULES:
 1. Always call listProducts or getProduct before mentioning product details — never guess.
@@ -42,6 +43,7 @@ CORE RULES:
 10. For complaints or account issues, call escalateToHuman.
 11. Never confirm a cart change until addToCart or updateCartItemQuantity actually succeeds.
 12. Allergen and nutrition info comes from getProduct — never invent it.
+13. For custom cake orders, collect the delivery date and full cake description (flavour, size, tiers, design, dietary needs). Then call submitCustomCakeOrder. The customer's email is resolved automatically from their session; only ask for it if the tool reports it's missing.
 
 PROPOSAL FLOW (cart changes):
 1. Call proposeCartUpdate with items and a question like "Do you want me to add Bloom Booster to your cart?"
@@ -246,6 +248,37 @@ export function buildVapiAssistantConfig(
             parameters: {
               type: "object",
               properties: {},
+            },
+          },
+          server: { url: serverUrl },
+        },
+
+        {
+          type: "function" as const,
+          function: {
+            name: "submitCustomCakeOrder",
+            description:
+              "Submit a custom cake order. Collect the desired delivery date, a detailed cake description (flavour, size, tiers, design, dietary requirements), and optionally the customer's email. Sends a confirmation email to both the customer and the bakery support team.",
+            parameters: {
+              type: "object",
+              required: ["deliveryDate", "cakeDescription"],
+              properties: {
+                deliveryDate: {
+                  type: "string",
+                  description:
+                    "The desired delivery date for the custom cake in ISO 8601 format (e.g. '2026-03-15') or a natural date string.",
+                },
+                cakeDescription: {
+                  type: "string",
+                  description:
+                    "Full description of the custom cake including flavour, size, tiers, design theme, dietary requirements, and any special instructions.",
+                },
+                customerEmail: {
+                  type: "string",
+                  description:
+                    "Customer's email address. If the customer is logged in this is resolved server-side automatically; only include if the customer provides it explicitly.",
+                },
+              },
             },
           },
           server: { url: serverUrl },

@@ -23,6 +23,7 @@ import { KnowledgeService } from "@/server/services/knowledge.service";
 import { ConversationService } from "@/server/services/conversation.service";
 import { NotificationService } from "@/server/services/notification.service";
 import { CartService } from "@/server/services/cart.service";
+import { prisma } from "@/server/prisma/client";
 import { listProductsQuerySchema } from "@/server/validation/product.schemas";
 import { MessageRole, AgentType } from "@/generated/prisma/enums";
 
@@ -47,10 +48,16 @@ interface VapiToolCallsPayload {
 }
 
 /** Safely extract args regardless of whether VAPI sent a string or object. */
-function parseToolArgs(raw: string | Record<string, unknown> | undefined): Record<string, unknown> {
+function parseToolArgs(
+  raw: string | Record<string, unknown> | undefined,
+): Record<string, unknown> {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
-  try { return JSON.parse(raw); } catch { return {}; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 async function resolveVariantIdFromToolArgs(args: Record<string, unknown>) {
@@ -63,7 +70,9 @@ async function resolveVariantIdFromToolArgs(args: Record<string, unknown>) {
   if (productIdLike) {
     try {
       const product = await ProductService.getProductById(productIdLike, false);
-      const activeVariant = product.variants.find((variant) => variant.isActive);
+      const activeVariant = product.variants.find(
+        (variant) => variant.isActive,
+      );
       if (activeVariant) {
         return activeVariant.id;
       }
@@ -77,7 +86,9 @@ async function resolveVariantIdFromToolArgs(args: Record<string, unknown>) {
   if (slug) {
     try {
       const product = await ProductService.getProductBySlugDirect(slug, false);
-      const activeVariant = product.variants.find((variant) => variant.isActive);
+      const activeVariant = product.variants.find(
+        (variant) => variant.isActive,
+      );
       return activeVariant?.id ?? null;
     } catch {
       return null;
@@ -196,7 +207,11 @@ async function executeToolCall(
       }
 
       try {
-        const cart = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
+        const cart = await CartService.getOrCreateActiveCart(
+          userId,
+          cartSessionId,
+          "USD",
+        );
         const existing = cart.items.find((i) => i.variantId === variantId);
 
         if (!existing && quantity > 0) {
@@ -220,7 +235,11 @@ async function executeToolCall(
           });
         }
 
-        const updated = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
+        const updated = await CartService.getOrCreateActiveCart(
+          userId,
+          cartSessionId,
+          "USD",
+        );
         return {
           success: true,
           totalItems: updated.summary.itemCount,
@@ -235,7 +254,11 @@ async function executeToolCall(
     // ── getCart ──────────────────────────────────────────────────────────────
     case "getCart": {
       try {
-        const cart = await CartService.getOrCreateActiveCart(userId, cartSessionId, "USD");
+        const cart = await CartService.getOrCreateActiveCart(
+          userId,
+          cartSessionId,
+          "USD",
+        );
         const items = cart.items.map((i) => ({
           name: i.variant.product.name,
           variant: i.variant.label,
@@ -361,7 +384,10 @@ async function executeToolCall(
 
       if (requestedPercent > maxApproved) {
         if (!conversationId && sessionId) {
-          const conversation = await ConversationService.getOrCreate(sessionId, userId);
+          const conversation = await ConversationService.getOrCreate(
+            sessionId,
+            userId,
+          );
           conversationId = conversation.id;
         }
 
@@ -398,6 +424,69 @@ async function executeToolCall(
         switchMode: requestedPercent > maxApproved ? "chat" : "voice",
         message: `Supervisor approved a ${approvedPercent}% discount on this order. ${note}`,
         supervisorNote: reason,
+      };
+    }
+
+    // ── submitCustomCakeOrder ────────────────────────────────────────────────
+    case "submitCustomCakeOrder": {
+      const deliveryDate = String(args.deliveryDate ?? "").trim();
+      const cakeDescription = String(args.cakeDescription ?? "").trim();
+      let customerEmail = String(args.customerEmail ?? "").trim();
+      let customerName: string | undefined;
+
+      if (!deliveryDate) {
+        return {
+          error: "Please provide a delivery date for your custom cake order.",
+        };
+      }
+      if (!cakeDescription) {
+        return { error: "Please describe the cake you would like to order." };
+      }
+
+      // Resolve customer email from the authenticated session if not supplied
+      if (!customerEmail && userId) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true, name: true },
+          });
+          customerEmail = user?.email ?? "";
+          customerName = user?.name ?? undefined;
+        } catch {
+          // ignore lookup errors – we'll ask the customer for their email below
+        }
+      }
+
+      if (!customerEmail) {
+        return {
+          error:
+            "I couldn't find your email address. Could you please provide your email so we can confirm your order?",
+        };
+      }
+
+      const emailResult =
+        await NotificationService.sendCustomCakeOrderNotification({
+          customerEmail,
+          deliveryDate,
+          cakeDescription,
+          customerName,
+        });
+
+      if (!emailResult.success) {
+        return {
+          error:
+            "We had trouble sending the order confirmation emails. Please try again or contact us directly.",
+        };
+      }
+
+      return {
+        success: true,
+        message: `Your custom cake order has been received! A confirmation has been sent to ${customerEmail}. Our team will be in touch soon to confirm availability and pricing.`,
+        orderSummary: {
+          deliveryDate,
+          cakeDescription,
+          customerEmail,
+        },
       };
     }
 
