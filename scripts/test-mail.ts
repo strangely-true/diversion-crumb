@@ -33,7 +33,9 @@ async function main() {
   console.log("✅  SMTP connection verified\n");
 
   // 2. Send test email to SMTP_EMAIL itself (and SUPPORT_EMAIL if set)
-  const recipients = [...new Set([user, supportEmail].filter(Boolean) as string[])];
+  const recipients = [
+    ...new Set([user, supportEmail].filter(Boolean) as string[]),
+  ];
 
   const info = await transporter.sendMail({
     from: `"Crumbs & Co. Test" <${user}>`,
