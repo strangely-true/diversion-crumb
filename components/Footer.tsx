@@ -6,11 +6,11 @@ export default function Footer() {
             <div className="mx-auto grid max-w-7xl gap-8 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                     <Image
-                        src="/images/crumbs-and-co-logo.svg"
-                        alt="Crumbs & Co. logo"
+                        src="/logo-full.png"
+                        alt="Crumbs & Co."
                         width={190}
                         height={50}
-                        className="logo-mark"
+                        className="object-contain"
                     />
                     <p className="mt-3 text-sm text-[color:var(--text-muted)]">
                         Premium artisan bakery delivering fresh cakes, breads, and pastries.

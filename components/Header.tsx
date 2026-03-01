@@ -62,7 +62,7 @@ export default function Header() {
         { href: "/", label: "Home" },
         { href: "/products", label: "Products" },
         { href: "/about", label: "About Us" },
-        ...(isAuthenticated ? [{ href: "/account", label: "My Orders"}] : []),
+        ...(isAuthenticated ? [{ href: "/account", label: "My Orders" }] : []),
         ...(isAdmin ? [{ href: "/admin", label: "Admin", icon: Shield }] : []),
     ];
 
@@ -75,19 +75,24 @@ export default function Header() {
 
                 {/* ── Logo ──────────────────────────────────────────────────────── */}
                 <Link href="/" className="flex shrink-0 items-center gap-2">
-                    {/* Icon-only on xs, full logo from sm */}
+                    {/* Full logo on sm+ */}
                     <Image
-                        src="/images/crumbs-and-co-logo.svg"
-                        alt="Crumbs & Co. logo"
+                        src="/logo-full.png"
+                        alt="Crumbs & Co."
                         width={180}
                         height={48}
-                        className="logo-mark hidden sm:block"
+                        className="hidden sm:block object-contain"
                         priority
                     />
-                    {/* Small icon placeholder on xs — just show abbreviated brand name */}
-                    <span className="sm:hidden text-sm font-bold text-[color:var(--text-primary)] tracking-tight">
-                        Crumbs
-                    </span>
+                    {/* Small icon on xs */}
+                    <Image
+                        src="/logo.png"
+                        alt="Crumbs & Co."
+                        width={32}
+                        height={32}
+                        className="sm:hidden object-contain"
+                        priority
+                    />
                 </Link>
 
                 {/* ── Nav links (pill) ──────────────────────────────────────────── */}
