@@ -207,7 +207,7 @@ export default async function AdminConversationsPage() {
 
                     {(() => {
                       const metadata =
-                        typeof conversation.metadata === "object" ? conversation.metadata as Record<string, unknown> : {};
+                        conversation.metadata != null && typeof conversation.metadata === "object" ? conversation.metadata as Record<string, unknown> : {};
                       const approvedPercent = metadata.approvedDiscountPercent;
                       const requestedPercent = getRequestedDiscountPercent(conversation.messages);
                       const fallbackPercent = 20;

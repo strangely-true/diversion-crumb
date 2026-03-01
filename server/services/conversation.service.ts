@@ -139,7 +139,8 @@ export class ConversationService {
   }
 
   static async delete(conversationId: string) {
-    return prisma.conversation.delete({
+    // deleteMany is idempotent — no P2025 thrown if the record is already gone.
+    await prisma.conversation.deleteMany({
       where: { id: conversationId },
     });
   }
